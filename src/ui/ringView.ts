@@ -1,13 +1,11 @@
 import type { NodeId } from '../engine/types.ts';
-import type { Token } from '../ring/ring.ts';
 import type { Status } from '../swim/membership.ts';
 
 const NS = 'http://www.w3.org/2000/svg';
 const RING_R = 372;
-const TOKEN_R = 268;
-const KEY_R = 244;
+const KEY_R = 262;
 const CLIENT_R = 80;
-const MAX_PACKETS = 500;
+const MAX_PACKETS = 400;
 
 export interface Packet {
   from: NodeId;
@@ -37,16 +35,15 @@ export interface RingState {
   isUp(id: NodeId): boolean;
   isSlow(id: NodeId): boolean;
   isIsolated(id: NodeId): boolean;
-  incarnation(id: NodeId): number;
-  hints(id: NodeId): number;
-  belief(observer: NodeId, subject: NodeId): Status | undefined;
+  /** What the rest of the cluster believes about this node. */
+  status(id: NodeId): Status;
 }
 
 interface NodeEls {
   group: SVGGElement;
-  inc?: SVGTextElement;
-  hints?: SVGTextElement;
-  halo: Map<NodeId, SVGPathElement>;
+  /** Small line under the name: "down", "slow" or empty. */
+  note?: SVGTextElement;
+  client: boolean;
 }
 
 function el<K extends keyof SVGElementTagNameMap>(
@@ -68,26 +65,20 @@ function set(node: Element, name: string, value: string): void {
 const polar = (r: number, a: number) => ({ x: r * Math.cos(a), y: r * Math.sin(a) });
 const hashAngle = (at: number) => -Math.PI / 2 + 2 * Math.PI * at;
 
-export const nodeHue = (index: number, count: number) => `hsl(${Math.round((index * 360) / count)} 70% 62%)`;
-
 /**
- * The cluster picture. Outer circle: nodes, each with a halo showing what
- * every peer believes about it. Inner circle: the hash ring, with one tick
- * per virtual node colored by its owner, and the stored keys as dots.
- * Centre: clients. Packets fly along straight lines between all of them.
+ * The cluster picture. Outer circle: nodes, coloured by what the other nodes
+ * believe about them (dashed when actually down). Inner circle: keys at their
+ * place in the hash space. Centre: clients. Packets fly between them.
  */
 export class RingView {
   private readonly svg: SVGSVGElement;
   private readonly onPick: (id: NodeId | null) => void;
   private readonly onPickKey: (key: string) => void;
-  private ids: NodeId[] = [];
-  private clients: NodeId[] = [];
   private readonly pos = new Map<NodeId, { x: number; y: number }>();
   private readonly nodes = new Map<NodeId, NodeEls>();
   private readonly keyDots = new Map<string, SVGCircleElement>();
   private readonly pool: SVGCircleElement[] = [];
   private readonly ownerLines: SVGLineElement[] = [];
-  private tokenLayer!: SVGGElement;
   private ownerLayer!: SVGGElement;
   private keyLayer!: SVGGElement;
   private packetLayer!: SVGGElement;
@@ -100,8 +91,6 @@ export class RingView {
   }
 
   setNodes(ids: NodeId[], clients: NodeId[]): void {
-    this.ids = ids;
-    this.clients = clients;
     this.svg.replaceChildren();
     this.pos.clear();
     this.nodes.clear();
@@ -110,96 +99,49 @@ export class RingView {
     this.ownerLines.length = 0;
 
     const n = ids.length;
-    const angle = (i: number) => -Math.PI / 2 + (2 * Math.PI * i) / n;
-    const r = Math.max(9, Math.min(26, ((RING_R * Math.PI) / n) * 0.36));
-    const haloR = r + Math.max(5, r * 0.36);
-    const haloW = Math.max(3, r * 0.26);
-    const span = (Math.PI / n) * 0.8;
+    const r = Math.max(10, Math.min(30, ((RING_R * Math.PI) / n) * 0.42));
 
     el('circle', { class: 'guide', r: RING_R }, this.svg);
-    el('circle', { class: 'guide inner', r: TOKEN_R }, this.svg);
-    this.tokenLayer = el('g', {}, this.svg);
+    el('circle', { class: 'guide inner', r: KEY_R }, this.svg);
     this.ownerLayer = el('g', {}, this.svg);
     this.keyLayer = el('g', {}, this.svg);
     this.packetLayer = el('g', {}, this.svg);
 
     ids.forEach((id, i) => {
-      const p = polar(RING_R, angle(i));
-      this.pos.set(id, p);
+      const p = polar(RING_R, -Math.PI / 2 + (2 * Math.PI * i) / n);
       const group = this.makeGroup(id, p);
-
-      const halo = new Map<NodeId, SVGPathElement>();
-      ids.forEach((observer, j) => {
-        if (j === i) return;
-        const a = polar(haloR, angle(j) - span);
-        const b = polar(haloR, angle(j) + span);
-        const d = `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${haloR} ${haloR} 0 0 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
-        halo.set(observer, el('path', { class: 'halo', d, 'stroke-width': haloW }, group));
-      });
-
-      el('circle', { class: 'cut', r: haloR + haloW + 4 }, group);
-      el('circle', { class: 'pick', r: haloR + haloW }, group);
+      el('circle', { class: 'cut', r: r + 9 }, group);
+      el('circle', { class: 'pick', r: r + 5 }, group);
       el('circle', { class: 'body', r }, group);
-      el('circle', { class: 'tint', r: r - 3.5, stroke: nodeHue(i, n) }, group);
-      const label = el('text', { 'font-size': Math.max(8, r * 0.62), y: -r * 0.12 }, group);
-      label.textContent = id;
-      const inc = el('text', { class: 'inc', 'font-size': Math.max(6, r * 0.4), y: r * 0.52 }, group);
-      const out = polar(haloR + haloW + 16, angle(i));
-      const hints = el('text', { class: 'hints', 'font-size': 15, x: out.x.toFixed(1), y: out.y.toFixed(1) }, group);
-      this.nodes.set(id, { group, inc, hints, halo });
+      el('text', { 'font-size': Math.max(9, r * 0.6), y: -r * 0.1 }, group).textContent = id;
+      const note = el('text', { class: 'note', 'font-size': Math.max(7, r * 0.38), y: r * 0.5 }, group);
+      this.nodes.set(id, { group, note, client: false });
     });
 
     clients.forEach((id, i) => {
       const p = clients.length === 1 ? { x: 0, y: 0 } : polar(CLIENT_R, Math.PI + (2 * Math.PI * i) / clients.length);
-      this.pos.set(id, p);
       const group = this.makeGroup(id, p);
-      el('rect', { class: 'pick', x: -31, y: -21, width: 62, height: 42, rx: 9 }, group);
       el('rect', { class: 'cut', x: -35, y: -25, width: 70, height: 50, rx: 11 }, group);
+      el('rect', { class: 'pick', x: -31, y: -21, width: 62, height: 42, rx: 9 }, group);
       el('rect', { class: 'body', x: -26, y: -16, width: 52, height: 32, rx: 6 }, group);
       el('text', { 'font-size': 15 }, group).textContent = id;
-      this.nodes.set(id, { group, halo: new Map() });
+      this.nodes.set(id, { group, client: true });
     });
   }
 
-  /** Redraws the token ticks; call when the ring changes. */
-  setTokens(tokens: readonly Token[]): void {
-    this.tokenLayer.replaceChildren();
-    const count = this.ids.length;
-    for (const t of tokens) {
-      const a = hashAngle(t.token / 2 ** 32);
-      const p0 = polar(TOKEN_R - 7, a);
-      const p1 = polar(TOKEN_R + 7, a);
-      el(
-        'line',
-        { class: 'token', x1: p0.x.toFixed(1), y1: p0.y.toFixed(1), x2: p1.x.toFixed(1), y2: p1.y.toFixed(1), stroke: nodeHue(this.ids.indexOf(t.node), count) },
-        this.tokenLayer,
-      );
-    }
-  }
-
   render(s: RingState): void {
-    for (const id of [...this.ids, ...this.clients]) {
-      const els = this.nodes.get(id)!;
+    for (const [id, els] of this.nodes) {
       const cls = ['node'];
-      if (els.halo.size === 0) cls.push('client');
+      if (els.client) cls.push('client');
+      else cls.push(s.status(id));
       if (!s.isUp(id)) cls.push('down');
-      if (s.isSlow(id)) cls.push('slow');
       if (s.selected.has(id)) cls.push('selected');
       if (s.isIsolated(id)) cls.push('isolated');
       if (s.owners.includes(id)) cls.push('owner');
       set(els.group, 'class', cls.join(' '));
-      if (els.inc) {
-        const inc = `i${s.incarnation(id)}`;
-        if (els.inc.textContent !== inc) els.inc.textContent = inc;
-      }
-      if (els.hints) {
-        const depth = s.hints(id);
-        const text = depth ? `${depth}h` : '';
-        if (els.hints.textContent !== text) els.hints.textContent = text;
-      }
-      for (const [observer, path] of els.halo) {
-        const belief = s.belief(observer, id) ?? '';
-        set(path, 'class', `halo ${belief}${s.isUp(observer) ? '' : ' stale'}`);
+      if (els.note) {
+        const note = !s.isUp(id) ? 'down' : s.isSlow(id) ? 'slow' : '';
+        if (els.note.textContent !== note) els.note.textContent = note;
       }
     }
     this.renderKeys(s);
@@ -207,6 +149,7 @@ export class RingView {
   }
 
   private makeGroup(id: NodeId, p: { x: number; y: number }): SVGGElement {
+    this.pos.set(id, p);
     const group = el('g', { class: 'node', transform: `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})` }, this.svg);
     group.addEventListener('click', (ev) => {
       ev.stopPropagation();
@@ -220,10 +163,10 @@ export class RingView {
     let selectedAt: { x: number; y: number } | null = null;
     for (const k of s.keys) {
       seen.add(k.key);
-      let dot = this.keyDots.get(k.key);
       const p = polar(KEY_R, hashAngle(k.at));
+      let dot = this.keyDots.get(k.key);
       if (!dot) {
-        dot = el('circle', { r: 6.5, cx: p.x.toFixed(1), cy: p.y.toFixed(1) }, this.keyLayer);
+        dot = el('circle', { r: 7, cx: p.x.toFixed(1), cy: p.y.toFixed(1) }, this.keyLayer);
         el('title', {}, dot).textContent = k.key;
         dot.addEventListener('click', (ev) => {
           ev.stopPropagation();

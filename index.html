@@ -16,18 +16,17 @@
         <svg id="ring" viewBox="-500 -500 1000 1000" role="img" aria-label="Cluster ring"></svg>
         <footer class="legend">
           <span><i class="sw alive"></i>alive</span>
-          <span><i class="sw suspect"></i>suspect</span>
-          <span><i class="sw dead"></i>dead</span>
+          <span><i class="sw suspect"></i>doubted</span>
+          <span><i class="sw dead"></i>called dead</span>
           <span class="gap"></span>
-          <span><i class="dot gossip"></i>gossip</span>
-          <span><i class="dot client"></i>client request</span>
-          <span><i class="dot rep"></i>replication</span>
-          <span><i class="dot repair"></i>repair</span>
+          <span><i class="dot client"></i>request</span>
+          <span><i class="dot rep"></i>copying</span>
+          <span><i class="dot repair"></i>fixing</span>
           <span class="gap"></span>
-          <span><i class="dot key-ok"></i>key in sync</span>
-          <span><i class="dot key-divergent"></i>out of sync</span>
-          <span><i class="dot key-siblings"></i>siblings</span>
-          <p>Each node's halo shows what every peer believes about it. The inner ring is the hash space: ticks are virtual nodes, dots are keys.</p>
+          <span><i class="dot key-ok"></i>key</span>
+          <span><i class="dot key-divergent"></i>copies disagree</span>
+          <span><i class="dot key-siblings"></i>two versions</span>
+          <p>Outer circle: the nodes, coloured by what the others believe (dashed means really down). Inner circle: the keys. Tap a key to see which 3 nodes hold it.</p>
         </footer>
       </main>
       <aside id="side"></aside>

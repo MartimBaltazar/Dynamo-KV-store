@@ -159,25 +159,6 @@ h1 {
   user-select: none;
 }
 
-.node .inc {
-  fill: var(--muted);
-}
-
-.node.down .body {
-  fill: #12161d;
-  stroke: #566074;
-  stroke-dasharray: 5 4;
-}
-
-.node.down text {
-  fill: #566074;
-  text-decoration: line-through;
-}
-
-.node.slow .body {
-  stroke: var(--suspect);
-}
-
 .node .pick,
 .node .cut {
   fill: none;
@@ -197,38 +178,8 @@ h1 {
   stroke-dasharray: 3 5;
 }
 
-.halo {
-  fill: none;
-  stroke-linecap: butt;
-  stroke: var(--unknown);
-}
-
-.halo.alive { stroke: var(--alive); }
-.halo.suspect { stroke: var(--suspect); }
-.halo.dead { stroke: var(--dead); }
-.halo.stale { opacity: 0.25; }
-
 .guide.inner {
   stroke-dasharray: 2 6;
-}
-
-.token {
-  stroke-width: 2.5;
-  opacity: 0.75;
-}
-
-.node .tint {
-  fill: none;
-  stroke-width: 2.5;
-  opacity: 0.9;
-}
-
-.node.down .tint {
-  opacity: 0.25;
-}
-
-.node .hints {
-  fill: var(--handoff);
 }
 
 .node.client .body {
@@ -308,29 +259,6 @@ details[open] > summary {
 
 .check input {
   accent-color: var(--accent);
-}
-
-.requests,
-.versions {
-  font: 11.5px/1.7 var(--mono);
-  color: var(--muted);
-}
-
-.requests .ok b { color: var(--alive); }
-.requests .fail b { color: var(--dead); }
-.requests .wait b { color: var(--suspect); }
-
-.requests i {
-  font-style: normal;
-  margin-right: 4px;
-  padding: 0 4px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-}
-
-.requests i.acked {
-  border-color: var(--rep);
-  color: var(--rep);
 }
 
 .versions b {
@@ -484,3 +412,21 @@ dd {
     border-top: 1px solid var(--line);
   }
 }
+
+/* --- simplified view: a node's colour is the cluster's belief about it --- */
+
+.node.suspect .body { stroke: var(--suspect); }
+.node.dead .body { stroke: var(--dead); }
+
+.node.down .body {
+  fill: #12161d;
+  stroke-dasharray: 5 4;
+}
+
+.node.down text { fill: #6b7587; }
+
+.node .note {
+  fill: var(--suspect);
+}
+
+.node.down .note { fill: #8a94a6; }
