@@ -24,28 +24,30 @@ npm run experiment -- latency  # classic vs improved request routing, 10 seeds (
 
 ## What you can do in the simulator
 
-- Watch gossip, client requests, replica reads and writes, read repair, hint handoff and anti-entropy fly
-  between nodes, each in its own color.
-- Click nodes or clients to select them, then kill, restart, slow down or isolate them behind a partition.
-- Click a key on the inner ring to see its owners and exactly what each one holds, siblings and vector
-  clocks included. Issue a get, a put, or two concurrent puts.
-- Select two nodes to see their Merkle trees compared level by level.
-- Tune everything live: N, R, W, sloppy quorum, hinted handoff, read repair, anti-entropy interval, virtual
-  nodes, the workload (rate, read ratio, keyspace, zipf skew), all SWIM timings and all network faults.
-- Read eight headline metrics: availability, latency, stale reads, sibling reads, keys out of sync, hints
-  waiting, failure-detection time and false death verdicts. Everything else is in collapsed panels.
+- **Watch:** nodes sit on the outer circle, coloured by what the other nodes believe about them (green
+  alive, amber doubted, red called dead; dashed means actually down). Keys sit on the inner circle. Requests,
+  copying and repair fly between them; gossip is hidden unless you turn it on.
+- **Switch modes:** "Classic Dynamo" or "Improved" (both improvements at once).
+- **Break things:** tap nodes, then kill, restart, slow down or isolate them.
+- **Tune copies:** N copies per key, R for reads, W for writes.
+- **Inspect a key:** tap a dot to see which 3 nodes hold it and what each one has.
+- **Read seven metrics:** requests that succeeded, slowest 1% latency, reads that missed a write, keys whose
+  copies disagree, busiest node vs average, time to notice a failure, healthy nodes called dead.
+
+Everything else (repair switches, workload, network, Merkle diff, event log) is in the collapsed Settings
+and Inspect panels.
 
 Experiments worth trying:
 
 | Try this | You should see |
 | --- | --- |
-| R=1, W=1, then isolate half the nodes with one client | Stale reads climb |
-| Same partition with R=2, W=2 and sloppy quorum off | Errors on the minority side, zero stale reads |
-| Kill a node with sloppy quorum on | Hint counts appear beside stand-ins; restart the node and they drain |
-| Read repair, hinted handoff and anti-entropy all off, kill and restart a node | Keys stay orange forever |
-| Turn anti-entropy back on | Orange keys heal with no reads at all |
-| "Concurrent puts" on a key | The key turns purple (siblings); a normal put resolves it |
-| Loss at 40% | Live nodes get suspected and refute with a higher incarnation |
+| R=1, W=1, then isolate half the nodes with one client | "Reads that missed a write" climbs |
+| Same, but R=2, W=2 and stand-ins off | Failures instead, and no missed writes |
+| Turn off every repair switch, kill a node, restart it | Its keys stay amber forever |
+| Turn background copy checks back on | Amber keys heal with no reads at all |
+| "Two writes at once" on a key | The key turns purple (two versions); a normal write resolves it |
+| Packet loss at 30%, Classic, then Improved | "Healthy nodes called dead" stops rising |
+| Slow a node, Classic, then Improved | "Slowest 1%" drops back to normal |
 
 ## Architecture
 
