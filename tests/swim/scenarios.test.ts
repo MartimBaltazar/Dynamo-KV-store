@@ -111,6 +111,7 @@ test('a partition splits the view; healing reunites it', () => {
   assert.deepEqual(node(sim, 'n0').table.withStatus('alive').sort(), left);
   assert.equal(node(sim, 'n7').table.withStatus('alive').length, 6);
   assert.ok(!metrics.isConverged());
+  assert.equal(metrics.convergedAt, null, 'divergence after a disturbance clears the converged mark');
 
   sim.input({ type: 'heal' });
   sim.runUntil(150_000);

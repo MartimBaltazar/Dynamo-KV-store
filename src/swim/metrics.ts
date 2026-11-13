@@ -83,7 +83,8 @@ export class SwimMetrics {
         }
       }
     }
-    if (this.convergedAt === null && this.isConverged()) this.convergedAt = t;
+    if (!this.isConverged()) this.convergedAt = null;
+    else this.convergedAt ??= t;
   }
 
   /** True when every live node sees every live node as alive and no dead node as alive. */
