@@ -24,6 +24,8 @@ export interface SimNode<M extends Message> {
   onStart(ctx: Ctx<M>): void;
   onMessage(from: NodeId, msg: M, ctx: Ctx<M>): void;
   onTimer(tag: string, ctx: Ctx<M>): void;
+  /** Handles a `request` input: something the outside world asks this node to do. */
+  onRequest?(payload: unknown, ctx: Ctx<M>): void;
 }
 
 /**
@@ -38,7 +40,8 @@ export type Input =
   | { type: 'heal' }
   | { type: 'slow'; node: NodeId; factor: number }
   | { type: 'network'; patch: Partial<NetworkConfig> }
-  | { type: 'config'; patch: Record<string, number> };
+  | { type: 'config'; patch: Record<string, number> }
+  | { type: 'request'; node: NodeId; payload: unknown };
 
 export interface ScriptedInput {
   t: number;

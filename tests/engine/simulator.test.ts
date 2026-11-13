@@ -135,3 +135,25 @@ test('logLimit bounds memory and listeners see every event', () => {
   assert.ok(sim.log.length <= 200);
   assert.ok(seen > 1000);
 });
+
+test('request inputs reach a live node and are part of the replayable script', () => {
+  const seen: unknown[] = [];
+  const make = () => {
+    const o = opts(81);
+    return {
+      ...o,
+      createNode: () => {
+        const n = new Chatter(ids, { period: 100 }) as Chatter & { onRequest: (p: unknown) => void };
+        n.onRequest = (p) => seen.push(p);
+        return n;
+      },
+    };
+  };
+  const sim = new Simulator(make());
+  sim.runUntil(250);
+  sim.input({ type: 'request', node: 'a', payload: { hello: 1 } });
+  sim.input({ type: 'kill', node: 'b' });
+  sim.input({ type: 'request', node: 'b', payload: 'ignored while down' });
+  assert.deepEqual(seen, [{ hello: 1 }]);
+  assert.equal(sim.inputs.length, 3);
+});

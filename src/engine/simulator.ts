@@ -159,6 +159,11 @@ export class Simulator<M extends Message, C extends object> {
       case 'config':
         Object.assign(this.config, input.patch);
         return;
+      case 'request': {
+        const slot = this.slots.get(input.node);
+        if (slot?.up) slot.node.onRequest?.(input.payload, slot.ctx);
+        return;
+      }
     }
   }
 
