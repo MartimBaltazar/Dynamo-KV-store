@@ -8,6 +8,8 @@ export interface Update {
   status: Status;
   /** Incarnation number: only the member itself ever increases it. */
   inc: number;
+  /** For a suspicion: the node that failed to reach the member itself. */
+  by?: NodeId;
 }
 
 export interface Member {
