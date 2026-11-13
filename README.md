@@ -3,7 +3,8 @@
 A learning project: a Dynamo-style distributed key-value store and a browser simulator in which every
 mechanism can be watched in real time and every parameter tuned.
 
-**Status:** classic Dynamo is complete, and the first measured improvement (failure detection) is in. The
+**Status:** classic Dynamo is complete, and both measured improvements are in: failure detection, and
+latency and hot keys. The
 simulator runs SWIM membership, a consistent-hash ring with virtual nodes, tunable R/W quorums (sloppy or
 strict), vector clocks with siblings, hinted handoff, read repair and Merkle anti-entropy.
 
@@ -16,7 +17,9 @@ npm install        # only needed for the browser UI (Vite)
 npm run dev        # open the simulator
 npm test           # runs on plain Node, no dependencies needed
 npm run typecheck
-npm run experiment # classic vs improved failure detector, 20 seeds; add -- --write to save the report
+npm run experiment             # classic vs improved failure detector, 20 seeds
+npm run experiment -- latency  # classic vs improved request routing, 10 seeds (about 5 minutes)
+# add --write to either to save the report under experiments/
 ```
 
 ## What you can do in the simulator
@@ -135,16 +138,61 @@ Where it does not win, reported as measured:
 The dynamic-suspicion parameters were chosen by trying six settings on these same tests, so the numbers
 are tuned to them.
 
+## Beating classic Dynamo: latency and hot keys
+
+Classic Dynamo sends every read to all N owners, picks coordinators at random, and spreads keys evenly but
+not traffic. The improved request routing (`Improved request routing` in the UI) changes four things:
+
+- **Hedged reads.** A read asks only R replicas. If they are slower than usual it asks one more, and the
+  client likewise retries a slow coordinator through a second one. Only reads are hedged: a write sent twice
+  would become two versions.
+- **Latency-aware choice.** Coordinators and clients prefer whoever has answered fastest lately. A peer that
+  has not answered counts as at least as slow as the time waited, so a node whose replies always arrive too
+  late cannot look fast.
+- **Load cap.** A node doing more than 1.25x the average work is ranked as if twice as slow, so traffic spills
+  to its neighbours unless nobody else can answer.
+- **Hot-key replicas.** An owner that sees a key read more than 20 times a second lends copies to as many of
+  the next nodes round the ring as the traffic needs, and stops when the key cools.
+
+The test setup: 10 nodes, 6 clients at 50 requests a second, 90% reads, N=3 R=2 W=2. Each replica operation
+costs a node 5 ms, one at a time, so busy nodes queue. Results over 10 seeds (full tables in
+[`experiments/latency-and-load.md`](experiments/latency-and-load.md)):
+
+| Test | Classic | Improved |
+| --- | --- | --- |
+| One node 10x slower: p99 latency | 1338 ms | 210 ms |
+| One node 10x slower: failed requests | 2.6% | 0.02% |
+| Zipf-skewed keys: busiest node vs average | 1.68x | 1.15x |
+| One key takes half the traffic: busiest node vs average | 2.25x | 1.16x |
+| Same: time until the busiest node stays within 1.25x | never | 5.2 s |
+| Same: p99 latency of the other keys | 283 ms | 207 ms |
+| Normal load: hedged requests per 100 | n/a | 0.00 |
+| Normal load: messages sent | 134.6k | 102.2k |
+| Normal load: p50 / p99 latency | 165 / 200 ms | 170 / 208 ms |
+
+All three win conditions hold: p99 is far lower with a slow node, the busiest node stays within the cap, and
+hedging adds no traffic (total messages fall by a quarter, because reads stop asking every replica).
+
+What it costs and what did not work, as measured:
+
+- **About 5–8 ms slower when nothing is wrong.** Classic takes the fastest 2 of 3 answers; improved asks 2
+  chosen replicas and waits for both.
+- **Hedging alone barely helps and makes hot keys worse.** On its own it cut the slow-node p99 only from
+  1338 to 1025 ms, and the busiest node went from 2.25x to 3.04x the average, because asking just R replicas
+  concentrates reads on the first owners. Latency-aware choice is what fixes the slow node; hot-key replicas
+  are what fix the viral key. The load cap adds little on top.
+- **At normal load hedging never fired**, so its own value here is only as a safety net.
+- The thresholds (2x usual latency to hedge, 20 reads a second to call a key hot) were set by hand and
+  checked against these same tests.
+
 ## Roadmap
 
 Done: sim core, SWIM, hash ring, coordinator and quorums, vector clocks and siblings, hinted handoff, read
-repair, Merkle anti-entropy, experiment runner, improved failure detector.
+repair, Merkle anti-entropy, experiment runner, improved failure detector, improved request routing.
 
 Next:
 
-1. Decide whether to rework or drop phi, given the latency result.
-2. Latency and hot keys, measured the same way: hedged requests, latency-aware replica choice, bounded-load
-   placement, temporary extra replicas for hot keys.
-3. Scenario presets, export and import of seed + config + fault script, time-travel scrubber.
+1. Decide whether to rework or drop phi, given its latency result.
+2. Scenario presets, export and import of seed + config + fault script, time-travel scrubber.
 
 Not done yet from the original plan: explicit ring join and leave at runtime (the ring is fixed at start).
