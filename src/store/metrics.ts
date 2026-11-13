@@ -20,6 +20,8 @@ export class StoreMetrics {
   /** Keys shipped / actually changed by Merkle anti-entropy. */
   aeKeysSent = 0;
   aeKeysRepaired = 0;
+  /** Extra requests sent because the first choice was slow. */
+  hedges = 0;
 
   /** Per key: merged clock of every acknowledged write. */
   private readonly acked = new Map<string, VClock>();
@@ -42,6 +44,9 @@ export class StoreMetrics {
         return;
       case 'hint':
         this.hintsStored++;
+        return;
+      case 'hedge':
+        this.hedges++;
         return;
       case 'handoff':
         this.hintsDelivered += (e.data as { keys: number }).keys;

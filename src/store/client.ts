@@ -1,5 +1,6 @@
 import type { Rng } from '../engine/rng.ts';
 import type { Ctx, NodeId, SimNode } from '../engine/types.ts';
+import { LatencyTable } from './latency.ts';
 import type { ClientRequest, ClusterConfig, Msg } from './messages.ts';
 import { contextOf, type VClock } from './vclock.ts';
 
@@ -36,11 +37,13 @@ export class ClientNode implements SimNode<Msg> {
   private readonly cfg: ClusterConfig;
   private readonly nodes: NodeId[];
   private readonly contexts = new Map<string, VClock>();
-  private readonly pending = new Map<string, { op: 'get' | 'put'; key: string; t0: number; coord: NodeId }>();
+  private readonly pending = new Map<string, { op: 'get' | 'put'; key: string; t0: number; coord: NodeId; sent: Map<NodeId, number> }>();
+  private readonly latency = new LatencyTable();
   /** Coordinators that recently failed to answer: until when to avoid them, and the backoff. */
   private readonly avoid = new Map<NodeId, { until: number; backoff: number }>();
   private zipf: { key: string; cumulative: number[] } | null = null;
   private seq = 0;
+  private now = 0;
 
   constructor(id: NodeId, cfg: ClusterConfig, nodes: NodeId[]) {
     this.id = id;
@@ -61,11 +64,14 @@ export class ClientNode implements SimNode<Msg> {
         const op = ctx.rng.chance(this.cfg.readRatio) ? 'get' : 'put';
         this.issue({ op, key: this.pickKey(ctx.rng) }, ctx);
       }
+    } else if (tag.startsWith('hg:')) {
+      this.hedgeRead(tag.slice(3), ctx);
     } else if (tag.startsWith('to:')) {
       const id = tag.slice(3);
       const p = this.pending.get(id);
       if (!p) return;
       // Back off from a silent coordinator, doubling each time it stays silent.
+      for (const [coord, at] of p.sent) this.latency.stillWaiting(coord, ctx.now - at, ctx.now);
       const backoff = Math.min(60_000, (this.avoid.get(p.coord)?.backoff ?? 2500) * 2);
       this.avoid.set(p.coord, { until: ctx.now + backoff, backoff });
       this.done(id, false, 0, {}, ctx);
@@ -76,7 +82,10 @@ export class ClientNode implements SimNode<Msg> {
     this.issue(payload as ClientRequest, ctx);
   }
 
-  onMessage(_from: NodeId, msg: Msg, ctx: C): void {
+  onMessage(from: NodeId, msg: Msg, ctx: C): void {
+    if (msg.type !== 'get-res' && msg.type !== 'put-res') return;
+    const asked = this.pending.get(msg.id)?.sent.get(from);
+    if (asked !== undefined) this.latency.observe(from, ctx.now - asked, ctx.now);
     if (msg.type === 'get-res') {
       const p = this.pending.get(msg.id);
       if (!p) return;
@@ -92,10 +101,11 @@ export class ClientNode implements SimNode<Msg> {
   }
 
   private issue(req: ClientRequest, ctx: C): void {
+    this.now = ctx.now;
     const id = `${this.id}:${++this.seq}`;
     const candidates = this.nodes.filter((n) => (this.avoid.get(n)?.until ?? 0) <= ctx.now);
-    const coord = req.via ?? ctx.rng.pick(candidates.length ? candidates : this.nodes);
-    this.pending.set(id, { op: req.op, key: req.key, t0: ctx.now, coord });
+    const coord = req.via ?? this.choose(candidates.length ? candidates : this.nodes, ctx.rng);
+    this.pending.set(id, { op: req.op, key: req.key, t0: ctx.now, coord, sent: new Map([[coord, ctx.now]]) });
     ctx.emit('req', { id, op: req.op, key: req.key, coord } satisfies ClientReq);
     if (req.op === 'get') {
       ctx.send(coord, { type: 'get', id, key: req.key });
@@ -104,6 +114,41 @@ export class ClientNode implements SimNode<Msg> {
       ctx.send(coord, { type: 'put', id, key: req.key, value: req.value ?? `${this.id}#${this.seq}`, context });
     }
     ctx.setTimer(this.cfg.requestTimeout * 3, `to:${id}`);
+    if (this.cfg.hedge && req.op === 'get') ctx.setTimer(this.hedgeDelay(coord, ctx.now), `hg:${id}`);
+  }
+
+  /** Classic: any coordinator at random. Smart: the one that has answered fastest lately, with a little noise. */
+  private choose(candidates: NodeId[], rng: Rng): NodeId {
+    if (!this.cfg.smartRouting) return rng.pick(candidates);
+    const now = this.now;
+    let best = candidates[0];
+    let bestScore = Infinity;
+    for (const id of candidates) {
+      const score = (this.latency.get(id, now) ?? 0) * (1 + 0.2 * rng.next());
+      if (score < bestScore) [best, bestScore] = [id, score];
+    }
+    return best;
+  }
+
+  private hedgeDelay(coord: NodeId, now: number): number {
+    return Math.min(Math.max(20, (this.latency.get(coord, now) ?? 100) * 2), this.cfg.requestTimeout);
+  }
+
+  /**
+   * The coordinator is slower than usual: send the same read through another
+   * one and take whichever answers first. Only reads are hedged; a write sent
+   * twice would become two versions.
+   */
+  private hedgeRead(id: string, ctx: C): void {
+    const p = this.pending.get(id);
+    if (!p || p.sent.size > 1) return;
+    this.latency.stillWaiting(p.coord, ctx.now - p.t0, ctx.now);
+    const others = this.nodes.filter((n) => n !== p.coord && (this.avoid.get(n)?.until ?? 0) <= ctx.now);
+    if (others.length === 0) return;
+    const second = this.choose(others, ctx.rng);
+    p.sent.set(second, ctx.now);
+    ctx.emit('hedge', { by: 'client', key: p.key });
+    ctx.send(second, { type: 'get', id, key: p.key });
   }
 
   private done(id: string, ok: boolean, siblings: number, clock: VClock, ctx: C): void {
@@ -114,6 +159,7 @@ export class ClientNode implements SimNode<Msg> {
   }
 
   private pickKey(rng: Rng): string {
+    if (this.cfg.hotShare > 0 && rng.chance(this.cfg.hotShare)) return 'k0';
     const count = Math.max(1, Math.round(this.cfg.keys));
     const s = this.cfg.zipf;
     if (s <= 0) return `k${rng.int(count)}`;
