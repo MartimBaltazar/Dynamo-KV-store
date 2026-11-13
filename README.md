@@ -3,10 +3,9 @@
 A learning project: a Dynamo-style distributed key-value store and a browser simulator in which every
 mechanism can be watched in real time and every parameter tuned.
 
-**Status: classic Dynamo is complete.** The simulator runs a full Dynamo-style store: SWIM membership, a
-consistent-hash ring with virtual nodes, tunable R/W quorums (sloppy or strict), vector clocks with siblings,
-hinted handoff, read repair and Merkle anti-entropy. Next: two measured improvements over this baseline
-(smarter failure detection; latency and hot-key handling).
+**Status:** classic Dynamo is complete, and the first measured improvement (failure detection) is in. The
+simulator runs SWIM membership, a consistent-hash ring with virtual nodes, tunable R/W quorums (sloppy or
+strict), vector clocks with siblings, hinted handoff, read repair and Merkle anti-entropy.
 
 ## Run it
 
@@ -17,6 +16,7 @@ npm install        # only needed for the browser UI (Vite)
 npm run dev        # open the simulator
 npm test           # runs on plain Node, no dependencies needed
 npm run typecheck
+npm run experiment # classic vs improved failure detector, 20 seeds; add -- --write to save the report
 ```
 
 ## What you can do in the simulator
@@ -29,8 +29,8 @@ npm run typecheck
 - Select two nodes to see their Merkle trees compared level by level.
 - Tune everything live: N, R, W, sloppy quorum, hinted handoff, read repair, anti-entropy interval, virtual
   nodes, the workload (rate, read ratio, keyspace, zipf skew), all SWIM timings and all network faults.
-- Read the metrics: availability, latency percentiles, stale reads, sibling reads, divergent keys, hints,
-  repairs, failure-detection time, convergence time, false positives.
+- Read eight headline metrics: availability, latency, stale reads, sibling reads, keys out of sync, hints
+  waiting, failure-detection time and false death verdicts. Everything else is in collapsed panels.
 
 Experiments worth trying:
 
@@ -96,18 +96,55 @@ Known classic limitation, kept deliberately as part of the baseline: two clients
 through the same coordinator without reading in between do not become siblings; the later write silently
 wins. Through different coordinators they do become siblings.
 
+## Beating classic Dynamo: failure detection
+
+Classic SWIM uses one fixed ping timeout and one fixed suspect timeout. The improved detector
+(`Improved failure detector` in the UI) changes two things:
+
+- **Confirmation-based suspicion.** A suspicion starts with a long timeout and shortens as independent
+  nodes confirm they cannot reach the member either. A node that really died is confirmed quickly; a node
+  that one unlucky observer lost touch with is not, and has time to refute.
+- **Phi-accrual ping timeouts.** Each peer is judged against its own recent reply times instead of one limit.
+
+Results over 20 seeds on 20 nodes, classic vs improved on identical seeds and faults (full tables in
+[`experiments/failure-detection.md`](experiments/failure-detection.md), regenerate with `npm run experiment`):
+
+| Test | Classic | Improved |
+| --- | --- | --- |
+| False death verdicts at 10% loss | 18.8 | 0 |
+| False death verdicts at 20% loss | 77.7 | 0.3 |
+| False death verdicts at 30% loss | 420 | 39 |
+| One node 10x slower: times it is declared dead | 8.8 | 0 |
+| One node 10x slower: accusations it makes | 10.1 | 2.8 |
+| Time for all survivors to learn of a real death, clean network | 7.05 s | 7.50 s |
+| Same, at 300 ms mean latency | 5.38 s | 7.72 s |
+
+Where it wins: at 20% loss, classic needs a 5 s suspect timeout to get under one false verdict (detection
+7.75 s); improved gets there with 3 s (6.28 s), about 1.5 s faster at the same accuracy.
+
+Where it does not win, reported as measured:
+
+- **Rising latency.** Classic made no false verdicts up to 300 ms mean latency, so there was nothing to fix,
+  and the improved detector is about 2 s slower to detect a real death there. Phi is the cause.
+- **Self-doubt** (a node whose probes keep failing holds back its accusations) was built and measured. It
+  did not reduce false verdicts in any test and slowed real detection, so it is off by default. The switch
+  remains (`selfDoubt`) and its row is in the report.
+- Nearly all of the false-verdict reduction comes from confirmation-based suspicion. Phi's only measured
+  benefit is fewer accusations from a slow node.
+
+The dynamic-suspicion parameters were chosen by trying six settings on these same tests, so the numbers
+are tuned to them.
+
 ## Roadmap
 
 Done: sim core, SWIM, hash ring, coordinator and quorums, vector clocks and siblings, hinted handoff, read
-repair, Merkle anti-entropy.
+repair, Merkle anti-entropy, experiment runner, improved failure detector.
 
-Next, each measured against the classic baseline on identical seeds and faults:
+Next:
 
-1. Experiment runner: many seeds, classic vs improved, mean and spread.
-2. Failure detection: phi-accrual scoring, self-doubt when a node is the slow one, suspicion that shortens
-   as independent confirmations arrive.
-3. Latency and hot keys: hedged requests, latency-aware replica choice, bounded-load placement, temporary
-   extra replicas for hot keys.
-4. Scenario presets, export and import of seed + config + fault script, time-travel scrubber.
+1. Decide whether to rework or drop phi, given the latency result.
+2. Latency and hot keys, measured the same way: hedged requests, latency-aware replica choice, bounded-load
+   placement, temporary extra replicas for hot keys.
+3. Scenario presets, export and import of seed + config + fault script, time-travel scrubber.
 
 Not done yet from the original plan: explicit ring join and leave at runtime (the ring is fixed at start).
