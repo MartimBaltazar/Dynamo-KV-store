@@ -24,6 +24,25 @@ export interface StoreConfig {
   readRepair: number;
   /** Period of Merkle anti-entropy rounds; 0 turns it off. */
   antiEntropyInterval: number;
+  /** ms of work per replica read or write. Each node does one at a time, so load causes queueing. 0: instant. */
+  serviceTime: number;
+
+  // --- improvements over classic request handling; 0 is off ---
+
+  /**
+   * 1: reads go to just R replicas, and another is asked only if those are
+   * slower than usual; clients hedge reads to a second coordinator the same way.
+   */
+  hedge: number;
+  /** 1: prefer the replicas and coordinators that have answered fastest lately. */
+  smartRouting: number;
+  /** Avoid reading from a node carrying more than this multiple of the average load, e.g. 1.25. */
+  loadCap: number;
+  /** 1: a key read more than hotThreshold times a second gets temporary extra read replicas. */
+  hotKeys: number;
+  hotThreshold: number;
+  /** Most extra replicas a hot key may get; it gets as many as its traffic needs, on the next nodes round the ring. */
+  hotExtra: number;
 }
 
 export const defaultStoreConfig: StoreConfig = {
@@ -38,7 +57,17 @@ export const defaultStoreConfig: StoreConfig = {
   hintTtl: 60_000,
   readRepair: 1,
   antiEntropyInterval: 5000,
+  serviceTime: 0,
+  hedge: 0,
+  smartRouting: 0,
+  loadCap: 0,
+  hotKeys: 0,
+  hotThreshold: 20,
+  hotExtra: 16,
 };
+
+/** The request-handling improvements switched on together. */
+export const improvedRouting = { hedge: 1, smartRouting: 1, loadCap: 1.25, hotKeys: 1 } as const;
 
 export interface WorkloadConfig {
   /** Requests per second issued by each client; 0 stops the workload. */
@@ -49,6 +78,8 @@ export interface WorkloadConfig {
   keys: number;
   /** Zipf exponent for key popularity; 0 is uniform. */
   zipf: number;
+  /** Fraction of requests aimed at the single key `k0`: a key going viral. */
+  hotShare: number;
 }
 
 export const defaultWorkload: WorkloadConfig = {
@@ -56,6 +87,7 @@ export const defaultWorkload: WorkloadConfig = {
   readRatio: 0.5,
   keys: 24,
   zipf: 0,
+  hotShare: 0,
 };
 
 export type ClusterConfig = SwimConfig & StoreConfig & WorkloadConfig;
@@ -68,9 +100,11 @@ export type StoreMsg =
   | { type: 'put-res'; id: string; ok: boolean; clock: VClock }
   // coordinator <-> replica
   | { type: 'store'; rid: number; key: string; version: Version; hintFor?: NodeId }
-  | { type: 'store-ack'; rid: number }
+  | { type: 'store-ack'; rid: number; load: number }
   | { type: 'fetch'; rid: number; key: string }
-  | { type: 'fetch-res'; rid: number; versions: Version[] }
+  | { type: 'fetch-res'; rid: number; versions: Version[]; load: number; /** Extra read replicas this key has right now; 0 when not hot. */ hot: number }
+  // hot keys: an owner lends a copy to an extra read replica
+  | { type: 'hot-add'; key: string; versions: Version[]; extras: number }
   | { type: 'repair'; key: string; versions: Version[] }
   // hinted handoff
   | { type: 'handoff'; hid: number; entries: [string, Version[]][] }
