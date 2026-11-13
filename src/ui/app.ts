@@ -5,7 +5,7 @@ import { Ring } from '../ring/ring.ts';
 import type { Update } from '../swim/membership.ts';
 import { SwimMetrics } from '../swim/metrics.ts';
 import { createStoreCluster, defaultClusterConfig, isClient, type StoreSim } from '../store/cluster.ts';
-import type { ClientRequest, ClusterConfig } from '../store/messages.ts';
+import { improvedRouting, type ClientRequest, type ClusterConfig } from '../store/messages.ts';
 import { StoreMetrics } from '../store/metrics.ts';
 import type { StoreNode } from '../store/node.ts';
 import { clockKey, fingerprint } from '../store/vclock.ts';
@@ -232,6 +232,11 @@ cfgToggle(storeSec, 'readRepair', 'Read repair');
 checkbox(storeSec, 'Merkle anti-entropy', cfg.antiEntropyInterval > 0, (on) => {
   cfg.antiEntropyInterval = on ? 5000 : 0;
   sim.input({ type: 'config', patch: { antiEntropyInterval: cfg.antiEntropyInterval } });
+});
+checkbox(storeSec, 'Improved request routing', cfg.hedge === 1, (on) => {
+  const patch = Object.fromEntries(Object.entries(improvedRouting).map(([k, v]) => [k, on ? v : 0]));
+  Object.assign(cfg, patch);
+  sim.input({ type: 'config', patch });
 });
 checkbox(storeSec, 'Improved failure detector', cfg.phi === 1, (on) => {
   cfg.phi = cfg.dynamicSuspicion = on ? 1 : 0;
