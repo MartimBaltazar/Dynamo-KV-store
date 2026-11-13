@@ -1,0 +1,130 @@
+import type { Rng } from '../engine/rng.ts';
+import type { Ctx, NodeId, SimNode } from '../engine/types.ts';
+import type { ClientRequest, ClusterConfig, Msg } from './messages.ts';
+import { contextOf, type VClock } from './vclock.ts';
+
+type C = Ctx<Msg>;
+
+/** Data of the client's `req` and `res` state events. */
+export interface ClientReq {
+  id: string;
+  op: 'get' | 'put';
+  key: string;
+  coord: NodeId;
+}
+
+export interface ClientRes {
+  id: string;
+  op: 'get' | 'put';
+  key: string;
+  ok: boolean;
+  latency: number;
+  /** Number of versions a read returned. */
+  siblings: number;
+  /** Read: the context returned. Write: the clock of the version written. */
+  clock: VClock;
+}
+
+/**
+ * A simulated client. It talks to the cluster over the same lossy network as
+ * everyone else, generates the background workload, and carries out requests
+ * injected from outside. Like a real Dynamo client it remembers the context of
+ * what it last read per key and sends it back when writing.
+ */
+export class ClientNode implements SimNode<Msg> {
+  readonly id: NodeId;
+  private readonly cfg: ClusterConfig;
+  private readonly nodes: NodeId[];
+  private readonly contexts = new Map<string, VClock>();
+  private readonly pending = new Map<string, { op: 'get' | 'put'; key: string; t0: number; coord: NodeId }>();
+  /** Coordinators that recently failed to answer: until when to avoid them, and the backoff. */
+  private readonly avoid = new Map<NodeId, { until: number; backoff: number }>();
+  private zipf: { key: string; cumulative: number[] } | null = null;
+  private seq = 0;
+
+  constructor(id: NodeId, cfg: ClusterConfig, nodes: NodeId[]) {
+    this.id = id;
+    this.cfg = cfg;
+    this.nodes = nodes;
+  }
+
+  onStart(ctx: C): void {
+    ctx.setTimer(500 + ctx.rng.int(500), 'tick');
+  }
+
+  onTimer(tag: string, ctx: C): void {
+    if (tag === 'tick') {
+      const rate = this.cfg.rate;
+      // Uniform jitter around the mean gap keeps clients from marching in step.
+      ctx.setTimer(rate > 0 ? (1000 / rate) * (0.5 + ctx.rng.next()) : 200, 'tick');
+      if (rate > 0) {
+        const op = ctx.rng.chance(this.cfg.readRatio) ? 'get' : 'put';
+        this.issue({ op, key: this.pickKey(ctx.rng) }, ctx);
+      }
+    } else if (tag.startsWith('to:')) {
+      const id = tag.slice(3);
+      const p = this.pending.get(id);
+      if (!p) return;
+      // Back off from a silent coordinator, doubling each time it stays silent.
+      const backoff = Math.min(60_000, (this.avoid.get(p.coord)?.backoff ?? 2500) * 2);
+      this.avoid.set(p.coord, { until: ctx.now + backoff, backoff });
+      this.done(id, false, 0, {}, ctx);
+    }
+  }
+
+  onRequest(payload: unknown, ctx: C): void {
+    this.issue(payload as ClientRequest, ctx);
+  }
+
+  onMessage(_from: NodeId, msg: Msg, ctx: C): void {
+    if (msg.type === 'get-res') {
+      const p = this.pending.get(msg.id);
+      if (!p) return;
+      const context = contextOf(msg.versions);
+      if (msg.ok) this.contexts.set(p.key, context);
+      this.done(msg.id, msg.ok, msg.versions.length, context, ctx);
+    } else if (msg.type === 'put-res') {
+      const p = this.pending.get(msg.id);
+      if (!p) return;
+      if (msg.ok) this.contexts.set(p.key, msg.clock);
+      this.done(msg.id, msg.ok, 0, msg.clock, ctx);
+    }
+  }
+
+  private issue(req: ClientRequest, ctx: C): void {
+    const id = `${this.id}:${++this.seq}`;
+    const candidates = this.nodes.filter((n) => (this.avoid.get(n)?.until ?? 0) <= ctx.now);
+    const coord = req.via ?? ctx.rng.pick(candidates.length ? candidates : this.nodes);
+    this.pending.set(id, { op: req.op, key: req.key, t0: ctx.now, coord });
+    ctx.emit('req', { id, op: req.op, key: req.key, coord } satisfies ClientReq);
+    if (req.op === 'get') {
+      ctx.send(coord, { type: 'get', id, key: req.key });
+    } else {
+      const context = req.blind ? {} : (this.contexts.get(req.key) ?? {});
+      ctx.send(coord, { type: 'put', id, key: req.key, value: req.value ?? `${this.id}#${this.seq}`, context });
+    }
+    ctx.setTimer(this.cfg.requestTimeout * 3, `to:${id}`);
+  }
+
+  private done(id: string, ok: boolean, siblings: number, clock: VClock, ctx: C): void {
+    const p = this.pending.get(id)!;
+    this.pending.delete(id);
+    if (ok) this.avoid.delete(p.coord);
+    ctx.emit('res', { id, op: p.op, key: p.key, ok, latency: ctx.now - p.t0, siblings, clock } satisfies ClientRes);
+  }
+
+  private pickKey(rng: Rng): string {
+    const count = Math.max(1, Math.round(this.cfg.keys));
+    const s = this.cfg.zipf;
+    if (s <= 0) return `k${rng.int(count)}`;
+    const cacheKey = `${count}:${s}`;
+    if (this.zipf?.key !== cacheKey) {
+      let total = 0;
+      const cumulative = Array.from({ length: count }, (_, i) => (total += 1 / (i + 1) ** s));
+      this.zipf = { key: cacheKey, cumulative: cumulative.map((c) => c / total) };
+    }
+    const x = rng.next();
+    const i = this.zipf.cumulative.findIndex((c) => x < c);
+    return `k${i < 0 ? count - 1 : i}`;
+  }
+}
