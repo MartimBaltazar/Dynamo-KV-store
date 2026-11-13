@@ -1,12 +1,28 @@
 /** Small DOM builders for the sidebar. No framework, no state. */
 
-export function section(parent: HTMLElement, title: string): HTMLElement {
-  const s = document.createElement('section');
-  const h = document.createElement('h2');
+/** A collapsible sidebar section. */
+export function section(parent: HTMLElement, title: string, open = true): HTMLElement {
+  const s = document.createElement('details');
+  s.open = open;
+  const h = document.createElement('summary');
   h.textContent = title;
   s.appendChild(h);
   parent.appendChild(s);
   return s;
+}
+
+export function checkbox(parent: HTMLElement, label: string, checked: boolean, onChange: (on: boolean) => void): HTMLInputElement {
+  const wrap = document.createElement('label');
+  wrap.className = 'check';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = checked;
+  input.addEventListener('change', () => onChange(input.checked));
+  const name = document.createElement('span');
+  name.textContent = label;
+  wrap.append(input, name);
+  parent.appendChild(wrap);
+  return input;
 }
 
 export function row(parent: HTMLElement): HTMLElement {
