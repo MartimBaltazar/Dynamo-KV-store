@@ -26,7 +26,6 @@ let size = 10;
 let playing = true;
 let speed = 1;
 let showGossip = true;
-let showStore = true;
 
 let sim!: StoreSim;
 let swimMetrics!: SwimMetrics;
@@ -63,6 +62,7 @@ const ms = (v: number | undefined | null) => (v == null || Number.isNaN(v) ? 'n/
 const store = (id: NodeId) => sim.getNode(id) as StoreNode;
 const ownersOf = (key: string) => ringTruth.preferenceList(key, Math.round(cfg.n));
 
+/** Four packet families keep the picture readable; anything not listed is gossip. */
 const packetClass: Record<string, string> = {
   get: 'client',
   put: 'client',
@@ -70,13 +70,13 @@ const packetClass: Record<string, string> = {
   'put-res': 'client',
   store: 'rep',
   fetch: 'rep',
-  'store-ack': 'rep-ack',
-  'fetch-res': 'rep-ack',
+  'store-ack': 'rep',
+  'fetch-res': 'rep',
   repair: 'repair',
-  handoff: 'handoff',
-  'handoff-ack': 'handoff',
-  'ae-check': 'ae',
-  'ae-sync': 'ae',
+  handoff: 'repair',
+  'handoff-ack': 'repair',
+  'ae-check': 'repair',
+  'ae-sync': 'repair',
 };
 
 function reset(): void {
@@ -105,7 +105,7 @@ function onEvent(e: SimEvent): void {
     case 'drop': {
       if (e.type === 'drop' && e.reason === 'down') break;
       const cls = packetClass[e.kind] ?? 'gossip';
-      if (cls === 'gossip' ? !showGossip : !showStore) break;
+      if (cls === 'gossip' && !showGossip) break;
       const lost = e.type === 'drop';
       packets.push({ from: e.from, to: e.to, cls, t0: e.t, t1: lost ? e.t + sim.network.config.latencyMean : e.arrive, lost });
       break;
@@ -184,7 +184,6 @@ numberField(run, 'Seed (resets)', seed, (v) => {
   reset();
 });
 checkbox(run, 'Show gossip packets', showGossip, (on) => (showGossip = on));
-checkbox(run, 'Show store packets', showStore, (on) => (showStore = on));
 
 const faults = section(side, 'Faults');
 const faultHint = hint(faults, '');
@@ -203,9 +202,7 @@ function syncButtons(): void {
   isolateBtn.disabled = ids.length === 0 || ids.length === sim.nodeIds().length;
   slowBtn.disabled = ids.length === 0;
   healBtn.disabled = sim.network.partitions.length === 0;
-  const text = ids.length
-    ? `Selected: ${ids.join(', ')}. Isolate cuts the selection off from everyone else; include a client to keep traffic flowing on that side.`
-    : 'Click nodes or clients on the ring to select them.';
+  const text = ids.length ? `Selected: ${ids.join(', ')}` : 'Click nodes or clients to select them.';
   if (faultHint.textContent !== text) faultHint.textContent = text;
 }
 
@@ -224,49 +221,22 @@ function cfgToggle(parent: HTMLElement, key: keyof ClusterConfig, label: string)
   });
 }
 
-const work = section(side, 'Workload');
-cfgSlider(work, 'rate', 'Requests per client', 0, 50, 1, ' /s');
-cfgSlider(work, 'readRatio', 'Reads', 0, 100, 5, '%', 100);
-cfgSlider(work, 'keys', 'Keyspace', 1, 200, 1, ' keys');
-cfgSlider(work, 'zipf', 'Key skew (zipf exponent)', 0, 2, 0.1);
-
-const storeSec = section(side, 'Replication and quorums');
+const storeSec = section(side, 'Replication');
 cfgSlider(storeSec, 'n', 'N: replicas per key', 1, 5, 1);
 cfgSlider(storeSec, 'r', 'R: replies needed to read', 1, 5, 1);
 cfgSlider(storeSec, 'w', 'W: acks needed to write', 1, 5, 1);
 const quorumHint = hint(storeSec, '');
-cfgToggle(storeSec, 'sloppy', 'Sloppy quorum (stand-ins for dead owners)');
-cfgToggle(storeSec, 'hintedHandoff', 'Hinted handoff (stand-ins return writes)');
+cfgToggle(storeSec, 'sloppy', 'Sloppy quorum');
+cfgToggle(storeSec, 'hintedHandoff', 'Hinted handoff');
 cfgToggle(storeSec, 'readRepair', 'Read repair');
-cfgSlider(storeSec, 'antiEntropyInterval', 'Merkle anti-entropy every (0 = off)', 0, 20_000, 500, ' ms');
-cfgSlider(storeSec, 'vnodes', 'Virtual nodes per node', 1, 64, 1);
-cfgSlider(storeSec, 'requestTimeout', 'Request timeout', 100, 3000, 50, ' ms');
-cfgSlider(storeSec, 'hintTtl', 'Hint TTL', 1000, 120_000, 1000, ' ms');
-
-const swimSec = section(side, 'SWIM', false);
-cfgSlider(swimSec, 'protocolPeriod', 'Protocol period', 100, 3000, 50, ' ms');
-cfgSlider(swimSec, 'pingTimeout', 'Ping timeout', 20, 1500, 10, ' ms');
-cfgSlider(swimSec, 'indirectK', 'Indirect probes (k)', 0, 8, 1);
-cfgSlider(swimSec, 'suspectTimeout', 'Suspect timeout', 200, 15_000, 100, ' ms');
-cfgSlider(swimSec, 'piggybackMax', 'Piggyback max updates', 0, 12, 1);
-cfgSlider(swimSec, 'retransmitMult', 'Retransmit multiplier', 0.5, 6, 0.5);
-cfgSlider(swimSec, 'reconnectEvery', 'Retry dead every N periods', 0, 20, 1);
-
-const netSec = section(side, 'Network', false);
-const netSlider = (key: keyof NetworkConfig, label: string, max: number, percent: boolean) =>
-  slider(
-    netSec,
-    { label, min: 0, max, step: 1, value: percent ? net[key] * 100 : net[key], format: (v) => `${v}${percent ? '%' : ' ms'}` },
-    (v) => {
-      net[key] = percent ? v / 100 : v;
-      sim.input({ type: 'network', patch: { [key]: net[key] } });
-    },
-  );
-netSlider('latencyMean', 'Latency mean', 500, false);
-netSlider('latencyJitter', 'Latency jitter', 250, false);
-netSlider('loss', 'Loss', 80, true);
-netSlider('duplication', 'Duplication', 50, true);
-netSlider('reorder', 'Reordering', 50, true);
+checkbox(storeSec, 'Merkle anti-entropy', cfg.antiEntropyInterval > 0, (on) => {
+  cfg.antiEntropyInterval = on ? 5000 : 0;
+  sim.input({ type: 'config', patch: { antiEntropyInterval: cfg.antiEntropyInterval } });
+});
+checkbox(storeSec, 'Improved failure detector', cfg.phi === 1, (on) => {
+  cfg.phi = cfg.dynamicSuspicion = on ? 1 : 0;
+  sim.input({ type: 'config', patch: { phi: cfg.phi, dynamicSuspicion: cfg.dynamicSuspicion } });
+});
 
 const keySec = section(side, 'Selected key');
 const keyHint = hint(keySec, '');
@@ -288,41 +258,57 @@ button(keyRow, 'New key', () => {
   ask(0, { op: 'put', key: selectedKey });
 });
 
-const storeStats = section(side, 'Store metrics');
-const showStore_ = readout(storeStats, {
-  ops: 'Reads ok / failed',
-  puts: 'Writes ok / failed',
+const stats = section(side, 'Metrics');
+const showMetrics = readout(stats, {
   avail: 'Availability',
   latency: 'Latency p50 / p99',
   stale: 'Stale reads',
   siblings: 'Reads returning siblings',
-  divergent: 'Keys with differing replicas',
-  repairs: 'Read repairs sent',
-  hints: 'Hints queued / delivered',
-  ae: 'Anti-entropy keys sent / repaired',
-});
-
-const swimStats = section(side, 'Membership metrics', false);
-const showSwim = readout(swimStats, {
-  converged: 'Views match reality',
-  convergence: 'Convergence time',
-  messages: 'Messages sent / lost',
-  failure: 'Last failure',
-  suspect: 'First suspicion after',
-  dead: 'First death verdict after',
-  allDead: 'All nodes knew after',
-  falseSuspects: 'False suspicions',
+  divergent: 'Keys with replicas out of sync',
+  hints: 'Hints waiting',
+  detection: 'Last failure detected in',
   falseDeads: 'False death verdicts',
 });
 
-const reqSec = section(side, 'Requests');
-hint(reqSec, 'Fan-out per request. A highlighted replica has answered; the count is answers against the quorum needed.');
+const work = section(side, 'Workload', false);
+cfgSlider(work, 'rate', 'Requests per client', 0, 50, 1, ' /s');
+cfgSlider(work, 'readRatio', 'Reads', 0, 100, 5, '%', 100);
+cfgSlider(work, 'keys', 'Keyspace', 1, 200, 1, ' keys');
+cfgSlider(work, 'zipf', 'Key skew (zipf exponent)', 0, 2, 0.1);
+
+const netSec = section(side, 'Network', false);
+const netSlider = (key: keyof NetworkConfig, label: string, max: number, percent: boolean) =>
+  slider(
+    netSec,
+    { label, min: 0, max, step: 1, value: percent ? net[key] * 100 : net[key], format: (v) => `${v}${percent ? '%' : ' ms'}` },
+    (v) => {
+      net[key] = percent ? v / 100 : v;
+      sim.input({ type: 'network', patch: { [key]: net[key] } });
+    },
+  );
+netSlider('latencyMean', 'Latency mean', 500, false);
+netSlider('latencyJitter', 'Latency jitter', 250, false);
+netSlider('loss', 'Loss', 80, true);
+netSlider('duplication', 'Duplication', 50, true);
+netSlider('reorder', 'Reordering', 50, true);
+
+const advanced = section(side, 'Advanced', false);
+cfgSlider(advanced, 'protocolPeriod', 'SWIM protocol period', 100, 3000, 50, ' ms');
+cfgSlider(advanced, 'pingTimeout', 'SWIM ping timeout', 20, 1500, 10, ' ms');
+cfgSlider(advanced, 'indirectK', 'SWIM indirect probes (k)', 0, 8, 1);
+cfgSlider(advanced, 'suspectTimeout', 'SWIM suspect timeout', 200, 15_000, 100, ' ms');
+cfgSlider(advanced, 'piggybackMax', 'Gossip updates per message', 0, 12, 1);
+cfgSlider(advanced, 'vnodes', 'Virtual nodes per node', 1, 64, 1);
+cfgSlider(advanced, 'requestTimeout', 'Request timeout', 100, 3000, 50, ' ms');
+cfgSlider(advanced, 'hintTtl', 'Hint TTL', 1000, 120_000, 1000, ' ms');
+
+const reqSec = section(side, 'Requests', false);
 const requests = new RequestView(reqSec);
 
-const merkleSec = section(side, 'Merkle tree diff');
+const merkleSec = section(side, 'Merkle tree diff', false);
 const merkle = new MerkleView(merkleSec);
 
-const logSec = section(side, 'Event log');
+const logSec = section(side, 'Event log', false);
 const logEl = document.createElement('div');
 logEl.id = 'log';
 logSec.appendChild(logEl);
@@ -365,18 +351,16 @@ function slowRender(): void {
   });
 
   const m = storeMetrics;
-  const hintDepth = storeIds.reduce((n, id) => n + store(id).hints.depth, 0);
-  showStore_({
-    ops: `${m.gets.ok} / ${m.gets.fail}`,
-    puts: `${m.puts.ok} / ${m.puts.fail}`,
+  const failure = swimMetrics.failures.at(-1);
+  showMetrics({
     avail: `${(m.availability * 100).toFixed(1)}%`,
     latency: `${ms(m.percentile(0.5))} / ${ms(m.percentile(0.99))}`,
     stale: String(m.staleReads),
     siblings: String(m.siblingReads),
     divergent: `${keyDots.filter((k) => k.state === 'divergent').length} of ${keyDots.length}`,
-    repairs: String(m.readRepairs),
-    hints: `${hintDepth} / ${m.hintsDelivered}`,
-    ae: `${m.aeKeysSent} / ${m.aeKeysRepaired}`,
+    hints: String(storeIds.reduce((n, id) => n + store(id).hints.depth, 0)),
+    detection: failure ? (failure.allDead === undefined ? 'not yet' : `${(failure.allDead / 1000).toFixed(1)} s`) : 'n/a',
+    falseDeads: String(swimMetrics.falseDeads),
   });
 
   const overlap = cfg.r + cfg.w > cfg.n;
@@ -384,14 +368,14 @@ function slowRender(): void {
     cfg.r > cfg.n || cfg.w > cfg.n
       ? 'R or W exceeds N: those requests can never succeed.'
       : overlap
-        ? `R + W > N: every read quorum overlaps every write quorum.`
-        : `R + W <= N: a read can miss the latest write (stale reads possible).`;
+        ? 'R + W > N: reads always see the latest write.'
+        : 'R + W <= N: stale reads are possible.';
 
   // Selected key: what each owner holds.
   const hasKey = selectedKey !== null;
   getBtn.disabled = putBtn.disabled = clashBtn.disabled = !hasKey;
   if (!hasKey) {
-    keyHint.textContent = 'Click a key dot on the inner ring, or create a new key.';
+    keyHint.textContent = 'Click a key dot on the inner ring.';
     versionsEl.replaceChildren();
   } else {
     const owners = ownersOf(selectedKey!);
@@ -443,22 +427,7 @@ function render(wall: number): void {
   const converged = swimMetrics.convergedAt !== null;
   statusEl.innerHTML =
     `t = ${secs(now)} &middot; ${swimMetrics.up.size}/${swimMetrics.all.length} up &middot; ` +
-    `<span class="${converged ? 'ok' : 'no'}">membership ${converged ? 'converged' : 'diverged'}</span> &middot; ` +
-    `N=${cfg.n} R=${cfg.r} W=${cfg.w} &middot; ` +
-    `<span class="${storeMetrics.staleReads ? 'no' : 'ok'}">${storeMetrics.staleReads} stale reads</span>`;
-
-  const f = swimMetrics.failures.at(-1);
-  showSwim({
-    converged: converged ? 'yes' : 'no',
-    convergence: converged ? ms(swimMetrics.convergedAt! - swimMetrics.lastDisturbance) : 'n/a',
-    messages: `${swimMetrics.sent} / ${swimMetrics.lost}`,
-    failure: f ? `${f.node} at ${secs(f.t)}` : 'none',
-    suspect: ms(f?.firstSuspect),
-    dead: ms(f?.firstDead),
-    allDead: ms(f?.allDead),
-    falseSuspects: String(swimMetrics.falseSuspects),
-    falseDeads: String(swimMetrics.falseDeads),
-  });
+    `<span class="${converged ? 'ok' : 'no'}">membership ${converged ? 'converged' : 'diverged'}</span>`;
 
   requests.render();
 

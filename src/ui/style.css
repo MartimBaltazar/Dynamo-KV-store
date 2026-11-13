@@ -123,13 +123,10 @@ h1 {
 .sw.alive { background: var(--alive); }
 .sw.suspect { background: var(--suspect); }
 .sw.dead { background: var(--dead); }
-.sw.unknown { background: var(--unknown); }
 .dot.gossip { background: var(--gossip); }
 .dot.client { background: var(--client); }
 .dot.rep { background: var(--rep); }
 .dot.repair { background: var(--repair); }
-.dot.handoff { background: var(--handoff); }
-.dot.ae { background: var(--ae); }
 .dot.key-ok { background: var(--key); }
 .dot.key-divergent { background: var(--suspect); }
 .dot.key-siblings { background: var(--ping-req); }
@@ -266,10 +263,7 @@ h1 {
 .pk.gossip { r: 3.5px; }
 .pk.client { fill: var(--client); }
 .pk.rep { fill: var(--rep); }
-.pk.rep-ack { fill: var(--rep); opacity: 0.6; r: 4px; }
-.pk.repair { fill: var(--repair); r: 6.5px; }
-.pk.handoff { fill: var(--handoff); r: 6.5px; }
-.pk.ae { fill: var(--ae); r: 6px; }
+.pk.repair { fill: var(--repair); r: 6px; }
 .pk.lost { fill: none; stroke: var(--dead); stroke-width: 2.5; }
 
 /* --- sidebar ------------------------------------------------------------- */
