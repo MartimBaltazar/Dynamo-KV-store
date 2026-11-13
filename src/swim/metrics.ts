@@ -31,6 +31,12 @@ export class SwimMetrics {
   convergedAt: number | null = null;
 
   private readonly views = new Map<NodeId, Map<NodeId, Update>>();
+  private readonly isMember: (id: NodeId) => boolean;
+
+  /** `isMember` filters out simulated nodes that are not cluster members (clients). */
+  constructor(isMember: (id: NodeId) => boolean = () => true) {
+    this.isMember = isMember;
+  }
 
   /** What `observer` currently believes about `subject`. */
   belief(observer: NodeId, subject: NodeId): Update | undefined {
@@ -47,12 +53,14 @@ export class SwimMetrics {
         this.lost++;
         return;
       case 'up':
+        if (!this.isMember(e.node)) return;
         if (!this.all.includes(e.node)) this.all.push(e.node);
         this.up.add(e.node);
         this.views.set(e.node, new Map());
         this.disturb(e.t);
         return;
       case 'down':
+        if (!this.isMember(e.node)) return;
         this.up.delete(e.node);
         this.failures.push({ node: e.node, t: e.t });
         this.disturb(e.t);
