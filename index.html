@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dynamo KV store simulator: SWIM gossip</title>
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <main class="stage">
+        <header>
+          <h1>SWIM gossip membership</h1>
+          <p id="status"></p>
+        </header>
+        <svg id="ring" viewBox="-500 -500 1000 1000" role="img" aria-label="Cluster ring"></svg>
+        <footer class="legend">
+          <span><i class="sw alive"></i>alive</span>
+          <span><i class="sw suspect"></i>suspect</span>
+          <span><i class="sw dead"></i>dead</span>
+          <span><i class="sw unknown"></i>unknown</span>
+          <span class="gap"></span>
+          <span><i class="dot ping"></i>ping</span>
+          <span><i class="dot ack"></i>ack</span>
+          <span><i class="dot ping-req"></i>ping-req</span>
+          <span><i class="dot join"></i>join</span>
+          <span><i class="dot lost"></i>lost</span>
+          <p>
+            The halo around each node is a mini-map of the ring: the segment pointing toward a peer shows what
+            that peer currently believes about this node.
+          </p>
+        </footer>
+      </main>
+      <aside id="side"></aside>
+    </div>
+    <script type="module" src="/src/ui/app.ts"></script>
+  </body>
+</html>
