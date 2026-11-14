@@ -8,7 +8,7 @@ import { scenarios, type MetricKey, type Scenario } from './scenarios.ts';
 
 /** Simulated milliseconds per real millisecond. Slow-mo applies only while something visible is travelling. */
 const SPEEDS = {
-  slow: { label: 'Slow', busy: 0.1, idle: 3 },
+  slow: { label: 'Slow', busy: 0.04, idle: 1 },
   normal: { label: 'Normal', busy: 1, idle: 1 },
   fast: { label: 'Fast', busy: 6, idle: 6 },
 } as const;
@@ -37,6 +37,7 @@ let playing = true;
 let mode: SpeedMode = 'slow';
 let clock = 0;
 let carry = 0;
+let pace = 1;
 let script: Scenario['script'] = [];
 let selectedKey: string | null = null;
 const selected = new Set<NodeId>();
@@ -231,7 +232,10 @@ function frame(t: number): void {
   last = t;
   if (playing) {
     const speed = SPEEDS[mode];
-    carry += dt * (lanes.some((l) => l.busy) ? speed.busy : speed.idle);
+    const target = lanes.some((l) => l.busy) ? speed.busy : speed.idle;
+    // Ease between speeds so the world does not lurch when a packet lands.
+    pace += (target - pace) * Math.min(1, dt / 300);
+    carry += dt * pace;
     const whole = Math.floor(carry);
     if (whole > 0) {
       carry -= whole;
