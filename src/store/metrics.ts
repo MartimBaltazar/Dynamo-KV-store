@@ -60,7 +60,7 @@ export class StoreMetrics {
     }
   }
 
-  /** Latency percentile (0..1) over recent successful requests; NaN when there are none. */
+  /** Latency percentile (0..1) over recent requests, failures included; NaN when there are none. */
   percentile(p: number): number {
     if (this.latencies.length === 0) return NaN;
     const sorted = [...this.latencies].sort((a, b) => a - b);
@@ -77,10 +77,9 @@ export class StoreMetrics {
     const tally = res.op === 'get' ? this.gets : this.puts;
     if (res.ok) tally.ok++;
     else tally.fail++;
-    if (res.ok) {
-      this.latencies.push(res.latency);
-      if (this.latencies.length > LATENCY_WINDOW) this.latencies.shift();
-    }
+    // A failed request counts at the moment the client gave up, so failures cannot hide in the percentile.
+    this.latencies.push(res.latency);
+    if (this.latencies.length > LATENCY_WINDOW) this.latencies.shift();
     if (res.op === 'put') {
       if (res.ok) this.acked.set(res.key, merge(this.acked.get(res.key) ?? {}, res.clock));
       return;
