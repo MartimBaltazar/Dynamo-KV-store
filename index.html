@@ -8,28 +8,56 @@
   </head>
   <body>
     <div id="app">
-      <main class="stage">
-        <header>
-          <h1>Dynamo KV store</h1>
-          <p id="status"></p>
-        </header>
-        <svg id="ring" viewBox="-425 -425 850 850" role="img" aria-label="Cluster ring"></svg>
-        <footer class="legend">
-          <span><i class="sw alive"></i>alive</span>
-          <span><i class="sw suspect"></i>doubted</span>
-          <span><i class="sw dead"></i>called dead</span>
-          <span class="gap"></span>
-          <span><i class="dot client"></i>request</span>
-          <span><i class="dot rep"></i>copying</span>
-          <span><i class="dot repair"></i>fixing</span>
-          <span class="gap"></span>
-          <span><i class="dot key-ok"></i>key</span>
-          <span><i class="dot key-divergent"></i>copies disagree</span>
-          <span><i class="dot key-siblings"></i>two versions</span>
-          <p>Outer circle: the nodes, coloured by what the others believe (dashed means really down). Inner circle: the keys. Tap a key to see which 3 nodes hold it.</p>
-        </footer>
-      </main>
-      <aside id="side"></aside>
+      <header>
+        <h1>Dynamo KV store</h1>
+        <p class="tag">The same cluster and the same faults, once with classic Dynamo and once with our improvements.</p>
+      </header>
+
+      <nav id="scenarios" aria-label="Scenarios"></nav>
+      <section class="brief">
+        <p id="story"></p>
+        <p id="watch"></p>
+      </section>
+      <div id="controls"></div>
+
+      <div class="lanes">
+        <section class="lane">
+          <h2>Classic Dynamo</h2>
+          <svg id="ring-classic" viewBox="-415 -415 830 830" role="img" aria-label="Classic Dynamo cluster"></svg>
+          <p class="caption" id="cap-classic"></p>
+        </section>
+        <section class="lane">
+          <h2>Improved</h2>
+          <svg id="ring-improved" viewBox="-415 -415 830 830" role="img" aria-label="Improved cluster"></svg>
+          <p class="caption" id="cap-improved"></p>
+        </section>
+      </div>
+
+      <table id="metrics"></table>
+
+      <footer class="legend">
+        <span><i class="sw alive"></i>alive</span>
+        <span><i class="sw suspect"></i>doubted</span>
+        <span><i class="sw dead"></i>called dead</span>
+        <span class="gap"></span>
+        <span><i class="dot client"></i>request</span>
+        <span><i class="dot rep"></i>copying</span>
+        <span><i class="dot repair"></i>fixing</span>
+        <span><i class="dot lost"></i>lost</span>
+        <span class="gap"></span>
+        <span><i class="dot key-ok"></i>key</span>
+        <span><i class="dot key-divergent"></i>copies disagree</span>
+        <span><i class="dot key-siblings"></i>two versions (concurrent writes)</span>
+        <p>
+          Outer circle: the nodes, coloured by what the others believe (dashed means really down). Inner circle: the keys. Middle: the two
+          clients sending requests. Packets are slowed down while they travel.
+        </p>
+      </footer>
+
+      <details id="play-wrap">
+        <summary>Free play</summary>
+        <div id="play"></div>
+      </details>
     </div>
     <script type="module" src="/src/ui/app.ts"></script>
   </body>

@@ -1,29 +1,4 @@
-/** Small DOM builders for the sidebar. No framework, no state. */
-
-/** A collapsible sidebar section. */
-export function section(parent: HTMLElement, title: string, open = true): HTMLElement {
-  const s = document.createElement('details');
-  s.open = open;
-  const h = document.createElement('summary');
-  h.textContent = title;
-  s.appendChild(h);
-  parent.appendChild(s);
-  return s;
-}
-
-export function checkbox(parent: HTMLElement, label: string, checked: boolean, onChange: (on: boolean) => void): HTMLInputElement {
-  const wrap = document.createElement('label');
-  wrap.className = 'check';
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.checked = checked;
-  input.addEventListener('change', () => onChange(input.checked));
-  const name = document.createElement('span');
-  name.textContent = label;
-  wrap.append(input, name);
-  parent.appendChild(wrap);
-  return input;
-}
+/** Small DOM builders for the free-play panel. No framework, no state. */
 
 export function row(parent: HTMLElement): HTMLElement {
   const r = document.createElement('div');
@@ -80,38 +55,4 @@ export function slider(parent: HTMLElement, spec: SliderSpec, onInput: (v: numbe
   wrap.append(name, out, input);
   parent.appendChild(wrap);
   return input;
-}
-
-export function numberField(parent: HTMLElement, label: string, value: number, onChange: (v: number) => void): HTMLInputElement {
-  const wrap = document.createElement('label');
-  wrap.className = 'row';
-  const name = document.createElement('span');
-  name.textContent = label;
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.value = String(value);
-  input.addEventListener('change', () => onChange(Number(input.value) || 0));
-  wrap.append(name, input);
-  parent.appendChild(wrap);
-  return input;
-}
-
-/** A definition list whose values are updated by key. */
-export function readout(parent: HTMLElement, labels: Record<string, string>): (values: Record<string, string>) => void {
-  const dl = document.createElement('dl');
-  const cells = new Map<string, HTMLElement>();
-  for (const [key, label] of Object.entries(labels)) {
-    const dt = document.createElement('dt');
-    dt.textContent = label;
-    const dd = document.createElement('dd');
-    dl.append(dt, dd);
-    cells.set(key, dd);
-  }
-  parent.appendChild(dl);
-  return (values) => {
-    for (const [key, value] of Object.entries(values)) {
-      const cell = cells.get(key);
-      if (cell && cell.textContent !== value) cell.textContent = value;
-    }
-  };
 }

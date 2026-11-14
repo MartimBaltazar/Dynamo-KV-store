@@ -31,56 +31,160 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 #app {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  height: 100vh;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 16px 40px;
 }
 
-.stage {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  height: 100vh;
-  overflow: hidden;
-  padding: 16px 20px;
-}
-
-.stage header {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  flex-wrap: wrap;
+header {
+  margin-bottom: 10px;
 }
 
 h1 {
   margin: 0;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 600;
 }
 
-#status {
-  margin: 0;
+h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
-  font-family: var(--mono);
+}
+
+.tag {
+  margin: 2px 0 0;
+  color: var(--muted);
   font-size: 13px;
 }
 
-#status .ok {
-  color: var(--alive);
+/* --- scenario picker and controls ---------------------------------------- */
+
+#scenarios {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
-#status .no {
-  color: var(--suspect);
+#scenarios button {
+  padding: 10px 8px;
+  font-size: 14px;
 }
 
-#ring {
-  flex: 1;
-  min-height: 0;
+.brief p {
+  margin: 0 0 4px;
+}
+
+#story {
+  font-weight: 500;
+}
+
+#watch {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+#controls {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 8px -16px;
+  padding: 8px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+#controls .speed {
+  display: inline-flex;
+  gap: 4px;
+}
+
+#controls .clock {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+/* --- the two clusters ------------------------------------------------------ */
+
+.lanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 20px;
+}
+
+.lane {
+  min-width: 0;
+}
+
+.lane svg {
+  display: block;
   width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.caption {
+  min-height: 3.2em;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+#metrics {
+  width: 100%;
+  margin: 14px 0 6px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+#metrics th {
+  padding: 4px 8px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+#metrics th:first-child,
+#metrics td:first-child {
+  text-align: left;
+}
+
+#metrics td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  text-align: right;
+  color: var(--muted);
+}
+
+#metrics td:first-child {
+  font-family: inherit;
+}
+
+#metrics tr.hot td {
+  color: var(--text);
+  font-weight: 600;
+}
+
+#metrics td.win {
+  color: var(--alive);
 }
 
 .legend {
@@ -88,6 +192,7 @@ h1 {
   flex-wrap: wrap;
   gap: 4px 14px;
   align-items: center;
+  margin-top: 10px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -123,7 +228,6 @@ h1 {
 .sw.alive { background: var(--alive); }
 .sw.suspect { background: var(--suspect); }
 .sw.dead { background: var(--dead); }
-.dot.gossip { background: var(--gossip); }
 .dot.client { background: var(--client); }
 .dot.rep { background: var(--rep); }
 .dot.repair { background: var(--repair); }
@@ -131,6 +235,116 @@ h1 {
 .dot.key-divergent { background: var(--suspect); }
 .dot.key-siblings { background: var(--ping-req); }
 .dot.lost { background: none; border: 2px solid var(--dead); }
+
+/* --- free play ------------------------------------------------------------- */
+
+#play-wrap {
+  margin-top: 18px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+summary {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+#play-wrap[open] > summary {
+  margin-bottom: 10px;
+}
+
+#play {
+  max-width: 460px;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+button {
+  background: #1e2634;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06121f;
+  font-weight: 600;
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--dead);
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.slider output {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.slider input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .lanes {
+    grid-template-columns: 1fr;
+  }
+
+  #controls {
+    gap: 5px;
+    margin: 6px -16px;
+    padding: 6px 16px;
+  }
+
+  #controls button {
+    padding: 6px 9px;
+    font-size: 13px;
+  }
+
+  #controls .clock {
+    font-size: 13px;
+  }
+}
 
 /* --- ring ---------------------------------------------------------------- */
 
@@ -211,207 +425,10 @@ h1 {
 }
 
 .pk { fill: var(--gossip); }
-.pk.gossip { r: 3.5px; }
 .pk.client { fill: var(--client); }
 .pk.rep { fill: var(--rep); }
-.pk.repair { fill: var(--repair); r: 6px; }
+.pk.repair { fill: var(--repair); r: 11px; }
 .pk.lost { fill: none; stroke: var(--dead); stroke-width: 2.5; }
-
-/* --- sidebar ------------------------------------------------------------- */
-
-#side {
-  overflow-y: auto;
-  background: var(--panel);
-  border-left: 1px solid var(--line);
-  padding: 6px 16px 24px;
-}
-
-details {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-details:last-child {
-  border-bottom: 0;
-}
-
-summary {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-
-details[open] > summary {
-  margin-bottom: 9px;
-}
-
-.check {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  margin-bottom: 6px;
-  font-size: 13px;
-}
-
-.check input {
-  accent-color: var(--accent);
-}
-
-.versions b {
-  color: var(--text);
-  font-weight: 500;
-}
-
-.versions .sib {
-  color: var(--ping-req);
-}
-
-.merkle div {
-  display: flex;
-  gap: 2px;
-  margin-bottom: 2px;
-}
-
-.merkle i {
-  flex: 1;
-  height: 12px;
-  border-radius: 2px;
-  background: #1f6f4f;
-}
-
-.merkle i.empty { background: var(--unknown); }
-.merkle i.diff { background: var(--dead); }
-
-.row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-button {
-  background: #1e2634;
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font: inherit;
-  cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #06121f;
-  font-weight: 600;
-  min-width: 74px;
-}
-
-button.danger:hover:not(:disabled) {
-  border-color: var(--dead);
-}
-
-.slider {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0 8px;
-  margin-bottom: 6px;
-  font-size: 13px;
-}
-
-.slider output {
-  font-family: var(--mono);
-  color: var(--muted);
-}
-
-.slider input {
-  grid-column: 1 / -1;
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-input[type='number'] {
-  width: 90px;
-  background: #0f131a;
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 8px;
-  font: 13px var(--mono);
-}
-
-.hint {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-dl {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 3px 10px;
-  margin: 0;
-  font-size: 13px;
-}
-
-dt {
-  color: var(--muted);
-}
-
-dd {
-  margin: 0;
-  font-family: var(--mono);
-  text-align: right;
-}
-
-#log {
-  margin: 0;
-  height: 220px;
-  overflow-y: auto;
-  font: 11.5px/1.5 var(--mono);
-  color: var(--muted);
-  white-space: pre-wrap;
-}
-
-#log .suspect { color: var(--suspect); }
-#log .dead { color: var(--dead); }
-#log .alive { color: var(--alive); }
-#log .input { color: var(--text); }
-#log .repair { color: var(--repair); }
-#log .handoff { color: var(--handoff); }
-#log .ae { color: var(--ae); }
-
-@media (max-width: 820px) {
-  #app {
-    grid-template-columns: 1fr;
-    height: auto;
-  }
-  .stage {
-    height: auto;
-  }
-  #ring {
-    flex: none;
-    height: 100vw;
-  }
-  #side {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
-}
 
 /* --- simplified view: a node's colour is the cluster's belief about it --- */
 
