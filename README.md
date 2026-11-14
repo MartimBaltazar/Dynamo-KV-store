@@ -33,14 +33,18 @@ npm run experiment -- latency  # latency and load, 10 seeds (about 5 minutes)
 
 ## Simulator
 
-- **Watch:** nodes on the outer circle, coloured by what the cluster believes (green alive, amber doubted,
-  red called dead; dashed means actually down). Keys on the inner circle.
-- **Modes:** Classic Dynamo or Improved.
-- **Break things:** kill, restart, slow down or isolate nodes; set packet loss.
-- **Tune:** N, R, W; repair switches under Settings.
-- **Inspect:** tap a key to see its owners and what each holds.
-- **Seven metrics:** success rate, slowest 1% latency, stale reads, keys whose copies disagree, busiest node
-  vs average, time to notice a failure, healthy nodes called dead.
+Pick a story and watch classic Dynamo and the improved version face the same faults, side by side:
+
+- **A node dies:** writes for the dead node are parked on a stand-in, then handed back.
+- **Packet loss:** classic wrongly declares healthy nodes dead; improved does not.
+- **Slow node:** classic requests wait on it; improved routes around it.
+- **Viral key:** one key takes half the traffic; improved spreads it over extra copies.
+
+Each ring has a one-line caption of what is happening ("n3 isn't answering, so n4 keeps k21 for it as a
+hint"), and a table under them marks which side wins each number. Packets are slowed down while they travel;
+use Fast to skip ahead. Nodes are coloured by what the cluster believes (green alive, amber doubted, red
+called dead; dashed means really down). Free play (collapsed) lets you kill, slow or isolate nodes and change
+N/R/W, load and loss on both clusters at once.
 
 ## Design
 
@@ -55,8 +59,8 @@ byte for byte.
 | `src/swim/` | Member table, gossip, SWIM node, phi-accrual |
 | `src/ring/` | Hash, ring, preference lists |
 | `src/store/` | Vector clocks, coordinator, hints, Merkle trees, store node, clients |
-| `src/ui/` | TypeScript + SVG, rendered from the event stream |
-| `tests/` | Unit and scenario tests (80) |
+| `src/ui/` | Scenarios, per-cluster lane, caption writer, TypeScript + SVG views |
+| `tests/` | Unit and scenario tests (86) |
 
 Notes:
 

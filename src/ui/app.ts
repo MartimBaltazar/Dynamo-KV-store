@@ -1,4 +1,5 @@
 import type { Input, NodeId } from '../engine/types.ts';
+import type { NetworkConfig } from '../engine/network.ts';
 import type { ClientRequest, ClusterConfig } from '../store/messages.ts';
 import { button, hint, row, slider } from './controls.ts';
 import { Lane } from './lane.ts';
@@ -64,7 +65,7 @@ const chips = $<HTMLElement>('#scenarios');
 const chipEls = new Map<string, HTMLButtonElement>();
 for (const s of scenarios) chipEls.set(s.id, button(chips, s.title, () => load(s)));
 
-function load(s: Scenario, nodes = s.size): void {
+function load(s: Scenario, nodes = s.size, keepPlay = false): void {
   scenario = s;
   size = nodes;
   clock = 0;
@@ -77,6 +78,7 @@ function load(s: Scenario, nodes = s.size): void {
   $('#story').textContent = s.story;
   $('#watch').textContent = s.watch;
   buildTable();
+  if (!keepPlay) buildPlay();
   lastTable = 0;
 }
 
@@ -143,37 +145,53 @@ function fillTable(): void {
 // --- free play -------------------------------------------------------------
 
 const play = $<HTMLElement>('#play');
-const faultHint = hint(play, '');
-const faultRow = row(play);
-const each = (fn: (id: NodeId) => Input) => () => [...selected].forEach((id) => both((l) => l.input(fn(id))));
-const killBtn = button(faultRow, 'Kill', each((node) => ({ type: 'kill', node })), 'danger');
-const restartBtn = button(faultRow, 'Restart node', each((node) => ({ type: 'restart', node })));
-const slowBtn = button(faultRow, 'Slow', each((node) => ({ type: 'slow', node, factor: classic.sim.network.slow.has(node) ? 1 : 10 })));
-const isolateBtn = button(faultRow, 'Isolate', () => both((l) => l.input({ type: 'partition', groups: [[...selected]] })));
-const healBtn = button(faultRow, 'Heal', () => both((l) => l.input({ type: 'heal' })));
+let faultHint!: HTMLElement;
+let keyHint!: HTMLElement;
+let killBtn!: HTMLButtonElement;
+let restartBtn!: HTMLButtonElement;
+let slowBtn!: HTMLButtonElement;
+let isolateBtn!: HTMLButtonElement;
+let healBtn!: HTMLButtonElement;
+let getBtn!: HTMLButtonElement;
+let putBtn!: HTMLButtonElement;
+let clashBtn!: HTMLButtonElement;
 
-const keyHint = hint(play, '');
-const keyRow = row(play);
 const ask = (client: number, payload: ClientRequest) => both((l) => l.input({ type: 'request', node: `c${client}`, payload }));
-const getBtn = button(keyRow, 'Read key', () => ask(0, { op: 'get', key: selectedKey! }));
-const putBtn = button(keyRow, 'Write key', () => ask(0, { op: 'put', key: selectedKey! }));
-const clashBtn = button(keyRow, 'Two writes at once', () => {
-  const [a, b] = classic.ownersOf(selectedKey!);
-  ask(0, { op: 'put', key: selectedKey!, blind: true, via: a });
-  ask(1, { op: 'put', key: selectedKey!, blind: true, via: b ?? a });
-});
-
 const patch = (p: Partial<ClusterConfig>) => both((l) => l.input({ type: 'config', patch: p as Record<string, number> }));
-for (const [key, label] of [['n', 'Copies of each key (N)'], ['r', 'Copies a read waits for (R)'], ['w', 'Copies a write waits for (W)']] as const) {
-  slider(play, { label, min: 1, max: 5, step: 1, value: classic.cfg?.[key] ?? { n: 3, r: 2, w: 2 }[key] }, (v) => patch({ [key]: v }));
+const net = (p: Partial<NetworkConfig>) => both((l) => l.input({ type: 'network', patch: p }));
+
+/** Rebuilt on every story, so the sliders always show what the cluster is really using. */
+function buildPlay(): void {
+  play.replaceChildren();
+  const cfg = classic.cfg;
+  faultHint = hint(play, '');
+  const faultRow = row(play);
+  const each = (fn: (id: NodeId) => Input) => () => [...selected].forEach((id) => both((l) => l.input(fn(id))));
+  killBtn = button(faultRow, 'Kill', each((node) => ({ type: 'kill', node })), 'danger');
+  restartBtn = button(faultRow, 'Restart node', each((node) => ({ type: 'restart', node })));
+  slowBtn = button(faultRow, 'Slow', each((node) => ({ type: 'slow', node, factor: classic.sim.network.slow.has(node) ? 1 : 10 })));
+  isolateBtn = button(faultRow, 'Isolate', () => both((l) => l.input({ type: 'partition', groups: [[...selected]] })));
+  healBtn = button(faultRow, 'Heal', () => both((l) => l.input({ type: 'heal' })));
+
+  keyHint = hint(play, '');
+  const keyRow = row(play);
+  getBtn = button(keyRow, 'Read key', () => ask(0, { op: 'get', key: selectedKey! }));
+  putBtn = button(keyRow, 'Write key', () => ask(0, { op: 'put', key: selectedKey! }));
+  clashBtn = button(keyRow, 'Two writes at once', () => {
+    const [a, b] = classic.ownersOf(selectedKey!);
+    ask(0, { op: 'put', key: selectedKey!, blind: true, via: a });
+    ask(1, { op: 'put', key: selectedKey!, blind: true, via: b ?? a });
+  });
+
+  for (const [key, label] of [['n', 'Copies of each key (N)'], ['r', 'Copies a read waits for (R)'], ['w', 'Copies a write waits for (W)']] as const) {
+    slider(play, { label, min: 1, max: 5, step: 1, value: cfg[key] }, (v) => patch({ [key]: v }));
+  }
+  slider(play, { label: 'Requests per client', min: 0, max: 50, step: 1, value: cfg.rate, format: (v) => `${v} /s` }, (v) => patch({ rate: v }));
+  slider(play, { label: 'Share of reads', min: 0, max: 100, step: 5, value: Math.round(cfg.readRatio * 100), format: (v) => `${v}%` }, (v) => patch({ readRatio: v / 100 }));
+  slider(play, { label: 'Packet loss', min: 0, max: 60, step: 1, value: Math.round(classic.net.loss * 100), format: (v) => `${v}%` }, (v) => net({ loss: v / 100 }));
+  slider(play, { label: 'Network latency', min: 0, max: 300, step: 5, value: classic.net.latencyMean, format: (v) => `${v} ms` }, (v) => net({ latencyMean: v }));
+  slider(play, { label: 'Nodes (restarts the story)', min: 3, max: 20, step: 1, value: size }, (v) => load(scenario, v, true));
 }
-slider(play, { label: 'Requests per client', min: 0, max: 50, step: 1, value: scenario.config.rate ?? 2, format: (v) => `${v} /s` }, (v) => patch({ rate: v }));
-slider(play, { label: 'Share of reads', min: 0, max: 100, step: 5, value: (scenario.config.readRatio ?? 0.5) * 100, format: (v) => `${v}%` }, (v) => patch({ readRatio: v / 100 }));
-slider(play, { label: 'Packet loss', min: 0, max: 60, step: 1, value: (scenario.network.loss ?? 0) * 100, format: (v) => `${v}%` }, (v) =>
-  both((l) => l.input({ type: 'network', patch: { loss: v / 100 } })));
-slider(play, { label: 'Network latency', min: 0, max: 300, step: 5, value: 40, format: (v) => `${v} ms` }, (v) =>
-  both((l) => l.input({ type: 'network', patch: { latencyMean: v } })));
-slider(play, { label: 'Nodes (restarts the story)', min: 3, max: 20, step: 1, value: size }, (v) => load(scenario, v));
 
 function syncPlay(): void {
   const ids = [...selected];
