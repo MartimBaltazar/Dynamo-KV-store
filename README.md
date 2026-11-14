@@ -1,200 +1,102 @@
 # Dynamo-KV-store
 
-A learning project: a Dynamo-style distributed key-value store and a browser simulator in which every
-mechanism can be watched in real time and every parameter tuned.
+A Dynamo-style distributed key-value store in TypeScript, with a deterministic simulator and a browser UI to
+watch it and break it. Two measured improvements over classic Dynamo: failure detection, and latency and
+hot keys.
 
-**Status:** classic Dynamo is complete, and both measured improvements are in: failure detection, and
-latency and hot keys. The
-simulator runs SWIM membership, a consistent-hash ring with virtual nodes, tunable R/W quorums (sloppy or
-strict), vector clocks with siblings, hinted handoff, read repair and Merkle anti-entropy.
+**Paper:** [`paper/main.tex`](paper/main.tex), an extended abstract (ACM `acmart` format; upload `paper/` to
+Overleaf to build it).
+
+## What is in it
+
+Classic Dynamo: consistent-hash ring with virtual nodes, tunable N/R/W quorums (sloppy or strict), vector
+clocks with siblings, hinted handoff, read repair, Merkle anti-entropy, SWIM membership.
+
+Improvements, each compared classic vs improved on identical seeds and faults:
+
+- **Failure detection:** agreement-based suspicion and phi-accrual ping timeouts.
+- **Latency and hot keys:** hedged reads, latency-aware routing, a load cap, extra replicas for hot keys.
 
 ## Run it
 
 Requires Node 22.18 or newer.
 
 ```sh
-npm install        # only needed for the browser UI (Vite)
+npm install        # only for the browser UI (Vite)
 npm run dev        # open the simulator
-npm test           # runs on plain Node, no dependencies needed
+npm test           # plain Node, no dependencies
 npm run typecheck
-npm run experiment             # classic vs improved failure detector, 20 seeds
-npm run experiment -- latency  # classic vs improved request routing, 10 seeds (about 5 minutes)
-# add --write to either to save the report under experiments/
+npm run experiment             # failure detection, 20 seeds
+npm run experiment -- latency  # latency and load, 10 seeds (about 5 minutes)
+# add --write to save the report under experiments/
 ```
 
-## What you can do in the simulator
+## Simulator
 
-- **Watch:** nodes sit on the outer circle, coloured by what the other nodes believe about them (green
-  alive, amber doubted, red called dead; dashed means actually down). Keys sit on the inner circle. Requests,
-  copying and repair fly between them; gossip is hidden unless you turn it on.
-- **Switch modes:** "Classic Dynamo" or "Improved" (both improvements at once).
-- **Break things:** tap nodes, then kill, restart, slow down or isolate them.
-- **Tune copies:** N copies per key, R for reads, W for writes.
-- **Inspect a key:** tap a dot to see which 3 nodes hold it and what each one has.
-- **Read seven metrics:** requests that succeeded, slowest 1% latency, reads that missed a write, keys whose
-  copies disagree, busiest node vs average, time to notice a failure, healthy nodes called dead.
+- **Watch:** nodes on the outer circle, coloured by what the cluster believes (green alive, amber doubted,
+  red called dead; dashed means actually down). Keys on the inner circle.
+- **Modes:** Classic Dynamo or Improved.
+- **Break things:** kill, restart, slow down or isolate nodes; set packet loss.
+- **Tune:** N, R, W; repair switches under Settings.
+- **Inspect:** tap a key to see its owners and what each holds.
+- **Seven metrics:** success rate, slowest 1% latency, stale reads, keys whose copies disagree, busiest node
+  vs average, time to notice a failure, healthy nodes called dead.
 
-Everything else (repair switches, workload, network, Merkle diff, event log) is in the collapsed Settings
-and Inspect panels.
+## Design
 
-Experiments worth trying:
+The engine is pure and deterministic: virtual clock, `(time, seq)` event queue, seeded RNG. Protocol code
+has no sockets, wall clock or `Math.random`. Faults (latency, loss, partitions, slow nodes) live in the
+network, never in nodes. Every outside action is a timestamped input, so seed plus script reproduces a run
+byte for byte.
 
-| Try this | You should see |
+| Path | Contents |
 | --- | --- |
-| R=1, W=1, then isolate half the nodes with one client | "Reads that missed a write" climbs |
-| Same, but R=2, W=2 and stand-ins off | Failures instead, and no missed writes |
-| Turn off every repair switch, kill a node, restart it | Its keys stay amber forever |
-| Turn background copy checks back on | Amber keys heal with no reads at all |
-| "Two writes at once" on a key | The key turns purple (two versions); a normal write resolves it |
-| Packet loss at 30%, Classic, then Improved | "Healthy nodes called dead" stops rising |
-| Slow a node, Classic, then Improved | "Slowest 1%" drops back to normal |
+| `src/engine/` | Clock, event queue, RNG, simulated network |
+| `src/swim/` | Member table, gossip, SWIM node, phi-accrual |
+| `src/ring/` | Hash, ring, preference lists |
+| `src/store/` | Vector clocks, coordinator, hints, Merkle trees, store node, clients |
+| `src/ui/` | TypeScript + SVG, rendered from the event stream |
+| `tests/` | Unit and scenario tests (80) |
 
-## Architecture
+Notes:
 
-The engine is pure and deterministic. Protocol code has no sockets, no wall clock and no `Math.random`.
+- Ring membership is explicit. SWIM only decides which replicas to route around; it never changes ownership.
+- Any node can coordinate. Vector clocks use coordinator ids as actors.
+- Merkle anti-entropy compares, per pair of nodes, a 32-leaf tree over the keys both own.
+- Known classic limitation, kept in the baseline: blind writes through the same coordinator do not become
+  siblings; the later write wins.
 
-| Path | What it is |
-| --- | --- |
-| `src/engine/` | Virtual clock, `(time, seq)` event queue, seeded RNG, simulated network, event log |
-| `src/swim/` | Member table, piggyback dissemination, the SWIM node, metrics derived from the log |
-| `src/ring/` | 32-bit hash, consistent-hash ring with virtual nodes, preference lists |
-| `src/store/` | Vector clocks, replica storage, coordinator, hints, Merkle trees, store node, clients, metrics |
-| `src/ui/` | Plain TypeScript + SVG. Renders from the event stream; the engine has no DOM dependency |
-| `tests/` | Unit and scenario tests mirroring `src/` |
+## Results
 
-- **Nodes** implement `onStart`, `onMessage` and `onTimer` and only touch the world through a context
-  (`now`, `send`, `setTimer`, `rng`, `emit`).
-- **Faults live in the network**, never in nodes: latency, loss, duplication, reordering, partitions, slow
-  nodes.
-- **Clients are simulated nodes too.** They reach the cluster over the same faulty network, remember the
-  context of what they last read, and generate the workload from the seeded RNG.
-- **Every outside action is a timestamped input** (kill, restart, partition, config change, manual request). Seed plus input
-  script reproduces a run byte for byte; `replay()` does exactly that and the tests assert it.
-
-## SWIM specifics
-
-- Each protocol period a node pings one member, chosen round-robin from a shuffled list.
-- No ack within the ping timeout: it asks `k` others to probe indirectly. Still nothing by the end of the
-  period: the member becomes suspect, and dead after the suspect timeout.
-- A node that hears it is suspected or dead refutes by raising its incarnation number. A higher incarnation
-  always wins; at equal incarnation the worse news wins.
-- Membership updates ride piggyback on probe traffic, each sent about `multiplier x log2(N)` times.
-- A restarted node keeps its incarnation (as if stored on disk) and rejoins with the next one.
-- Nodes occasionally ping a member they believe dead, so the two sides of a healed partition find each other.
-
-## Store specifics
-
-- **Ring membership is explicit.** SWIM declaring a node dead never changes key ownership; it only makes
-  coordinators route around that node.
-- **Any node can coordinate.** It sends to the key's N owners and answers the client after R replies or W
-  acks. With sloppy quorum on, owners believed dead are replaced by the next healthy nodes on the ring.
-- **Stand-ins keep hinted writes apart from their own data**, serve reads from them, and hand them back when
-  the owner is alive again. Hints expire after a TTL.
-- **Vector clocks are per key, with coordinator ids as actors.** Concurrent versions are kept as siblings and
-  returned together; a write carrying the merged context replaces them.
-- **Read repair** pushes the merged result to owners that answered a read with something older.
-- **Merkle anti-entropy** compares, per pair of nodes, a 32-leaf hash tree over the keys both own. The two
-  sides trade hashes level by level, descend only where they differ, and ship only the differing ranges.
-- **A stale read** is a successful read that does not reflect a write acknowledged before the read began.
-
-Known classic limitation, kept deliberately as part of the baseline: two clients that write the same key
-through the same coordinator without reading in between do not become siblings; the later write silently
-wins. Through different coordinators they do become siblings.
-
-## Beating classic Dynamo: failure detection
-
-Classic SWIM uses one fixed ping timeout and one fixed suspect timeout. The improved detector
-(`Improved failure detector` in the UI) changes two things:
-
-- **Confirmation-based suspicion.** A suspicion starts with a long timeout and shortens as independent
-  nodes confirm they cannot reach the member either. A node that really died is confirmed quickly; a node
-  that one unlucky observer lost touch with is not, and has time to refute.
-- **Phi-accrual ping timeouts.** Each peer is judged against its own recent reply times instead of one limit.
-
-Results over 20 seeds on 20 nodes, classic vs improved on identical seeds and faults (full tables in
-[`experiments/failure-detection.md`](experiments/failure-detection.md), regenerate with `npm run experiment`):
+Failure detection (20 nodes, 20 seeds; [`experiments/failure-detection.md`](experiments/failure-detection.md)):
 
 | Test | Classic | Improved |
 | --- | --- | --- |
-| False death verdicts at 10% loss | 18.8 | 0 |
-| False death verdicts at 20% loss | 77.7 | 0.3 |
-| False death verdicts at 30% loss | 420 | 39 |
-| One node 10x slower: times it is declared dead | 8.8 | 0 |
-| One node 10x slower: accusations it makes | 10.1 | 2.8 |
-| Time for all survivors to learn of a real death, clean network | 7.05 s | 7.50 s |
-| Same, at 300 ms mean latency | 5.38 s | 7.72 s |
+| False death verdicts, 20% loss | 77.7 | 0.3 |
+| One node 10x slower: times declared dead | 8.8 | 0 |
+| Detect a real death, clean network | 7.05 s | 7.50 s |
+| Same, 300 ms mean latency | 5.38 s | 7.72 s |
 
-Where it wins: at 20% loss, classic needs a 5 s suspect timeout to get under one false verdict (detection
-7.75 s); improved gets there with 3 s (6.28 s), about 1.5 s faster at the same accuracy.
-
-Where it does not win, reported as measured:
-
-- **Rising latency.** Classic made no false verdicts up to 300 ms mean latency, so there was nothing to fix,
-  and the improved detector is about 2 s slower to detect a real death there. Phi is the cause.
-- **Self-doubt** (a node whose probes keep failing holds back its accusations) was built and measured. It
-  did not reduce false verdicts in any test and slowed real detection, so it is off by default. The switch
-  remains (`selfDoubt`) and its row is in the report.
-- Nearly all of the false-verdict reduction comes from confirmation-based suspicion. Phi's only measured
-  benefit is fewer accusations from a slow node.
-
-The dynamic-suspicion parameters were chosen by trying six settings on these same tests, so the numbers
-are tuned to them.
-
-## Beating classic Dynamo: latency and hot keys
-
-Classic Dynamo sends every read to all N owners, picks coordinators at random, and spreads keys evenly but
-not traffic. The improved request routing (`Improved request routing` in the UI) changes four things:
-
-- **Hedged reads.** A read asks only R replicas. If they are slower than usual it asks one more, and the
-  client likewise retries a slow coordinator through a second one. Only reads are hedged: a write sent twice
-  would become two versions.
-- **Latency-aware choice.** Coordinators and clients prefer whoever has answered fastest lately. A peer that
-  has not answered counts as at least as slow as the time waited, so a node whose replies always arrive too
-  late cannot look fast.
-- **Load cap.** A node doing more than 1.25x the average work is ranked as if twice as slow, so traffic spills
-  to its neighbours unless nobody else can answer.
-- **Hot-key replicas.** An owner that sees a key read more than 20 times a second lends copies to as many of
-  the next nodes round the ring as the traffic needs, and stops when the key cools.
-
-The test setup: 10 nodes, 6 clients at 50 requests a second, 90% reads, N=3 R=2 W=2. Each replica operation
-costs a node 5 ms, one at a time, so busy nodes queue. Results over 10 seeds (full tables in
-[`experiments/latency-and-load.md`](experiments/latency-and-load.md)):
+Latency and hot keys (10 nodes, 10 seeds; [`experiments/latency-and-load.md`](experiments/latency-and-load.md)):
 
 | Test | Classic | Improved |
 | --- | --- | --- |
-| One node 10x slower: p99 latency | 1338 ms | 210 ms |
-| One node 10x slower: failed requests | 2.6% | 0.02% |
-| Zipf-skewed keys: busiest node vs average | 1.68x | 1.15x |
-| One key takes half the traffic: busiest node vs average | 2.25x | 1.16x |
-| Same: time until the busiest node stays within 1.25x | never | 5.2 s |
-| Same: p99 latency of the other keys | 283 ms | 207 ms |
-| Normal load: hedged requests per 100 | n/a | 0.00 |
+| One node 10x slower: p99 | 1338 ms | 210 ms |
+| One key takes half the traffic: busiest vs average | 2.25x | 1.16x |
 | Normal load: messages sent | 134.6k | 102.2k |
-| Normal load: p50 / p99 latency | 165 / 200 ms | 170 / 208 ms |
+| Normal load: p50 / p99 | 165 / 200 ms | 170 / 208 ms |
 
-All three win conditions hold: p99 is far lower with a slow node, the busiest node stays within the cap, and
-hedging adds no traffic (total messages fall by a quarter, because reads stop asking every replica).
+Costs, as measured:
 
-What it costs and what did not work, as measured:
-
-- **About 5–8 ms slower when nothing is wrong.** Classic takes the fastest 2 of 3 answers; improved asks 2
-  chosen replicas and waits for both.
-- **Hedging alone barely helps and makes hot keys worse.** On its own it cut the slow-node p99 only from
-  1338 to 1025 ms, and the busiest node went from 2.25x to 3.04x the average, because asking just R replicas
-  concentrates reads on the first owners. Latency-aware choice is what fixes the slow node; hot-key replicas
-  are what fix the viral key. The load cap adds little on top.
-- **At normal load hedging never fired**, so its own value here is only as a safety net.
-- The thresholds (2x usual latency to hedge, 20 reads a second to call a key hot) were set by hand and
-  checked against these same tests.
+- Phi-accrual slows detection under high latency (about 2 s at 300 ms). Nearly all false-verdict reduction
+  comes from agreement-based suspicion.
+- Self-doubt was built and gave no benefit, so it is off by default.
+- Improved routing is 5 to 8 ms slower when nothing is wrong.
+- Hedging alone barely helps and worsens hot keys; latency-aware choice and hot-key replicas do the work.
+- Thresholds were tuned on these same tests.
 
 ## Roadmap
 
-Done: sim core, SWIM, hash ring, coordinator and quorums, vector clocks and siblings, hinted handoff, read
-repair, Merkle anti-entropy, experiment runner, improved failure detector, improved request routing.
-
-Next:
-
-1. Decide whether to rework or drop phi, given its latency result.
+1. Rework or drop phi-accrual, given its latency cost.
 2. Scenario presets, export and import of seed + config + fault script, time-travel scrubber.
-
-Not done yet from the original plan: explicit ring join and leave at runtime (the ring is fixed at start).
+3. Runtime ring join and leave (the ring is fixed at start).
