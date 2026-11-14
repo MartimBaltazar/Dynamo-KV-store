@@ -94,9 +94,3 @@ Costs, as measured:
 - Improved routing is 5 to 8 ms slower when nothing is wrong.
 - Hedging alone barely helps and worsens hot keys; latency-aware choice and hot-key replicas do the work.
 - Thresholds were tuned on these same tests.
-
-## Roadmap
-
-1. Rework or drop phi-accrual, given its latency cost.
-2. Scenario presets, export and import of seed + config + fault script, time-travel scrubber.
-3. Runtime ring join and leave (the ring is fixed at start).
