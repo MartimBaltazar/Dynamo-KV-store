@@ -4,6 +4,8 @@ A Dynamo-style distributed key-value store in TypeScript, with a deterministic s
 watch it and break it. Two measured improvements over classic Dynamo: failure detection, and latency and
 hot keys.
 
+**Live demo:** [dynamokv.martimnunesbaltazar.workers.dev](https://dynamokv.martimnunesbaltazar.workers.dev/)
+
 **Paper:** [`paper/main.tex`](paper/main.tex), an extended abstract (ACM `acmart` format; upload `paper/` to
 Overleaf to build it).
 
