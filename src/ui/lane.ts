@@ -70,7 +70,10 @@ export class Lane {
   constructor(improved: boolean, view: RingView | null) {
     this.improved = improved;
     this.view = view;
-    this.narrator = new Narrator({ isUp: (id) => this.sim.isUp(id) });
+    this.narrator = new Narrator({
+      isUp: (id) => this.sim.isUp(id),
+      slowNodes: () => this.storeIds.filter((id) => this.sim.network.slow.has(id)),
+    });
   }
 
   start(s: Scenario, size = s.size): void {
@@ -156,7 +159,10 @@ export class Lane {
     if (slow.length) return `${slow.join(', ')} ${slow.length > 1 ? 'are' : 'is'} slow. ${slow.length > 1 ? 'They' : 'It'} still answer${slow.length > 1 ? '' : 's'}, just late.`;
     if (this.sim.network.partitions.length) return 'The network is split into two groups.';
     if (this.net.loss > 0) return `${Math.round(this.net.loss * 100)}% of packets are lost. Watch for healthy nodes turning amber or red.`;
-    if (this.cfg.hotShare > 0) return `${Math.round(this.cfg.hotShare * 100)}% of requests ask for k0.`;
+    if (this.cfg.hotShare > 0) {
+      const share = `${Math.round(this.cfg.hotShare * 100)}% of requests ask for k0`;
+      return this.improved ? `${share}. Extra copies share the load.` : `${share}, so the ${Math.round(this.cfg.n)} nodes holding it do most of the work.`;
+    }
     return 'All nodes are healthy.';
   }
 
