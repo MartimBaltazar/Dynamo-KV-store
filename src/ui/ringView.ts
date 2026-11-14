@@ -113,8 +113,8 @@ export class RingView {
       el('circle', { class: 'cut', r: r + 9 }, group);
       el('circle', { class: 'pick', r: r + 5 }, group);
       el('circle', { class: 'body', r }, group);
-      el('text', { 'font-size': Math.max(9, r * 0.6), y: -r * 0.1 }, group).textContent = id;
-      const note = el('text', { class: 'note', 'font-size': Math.max(7, r * 0.38), y: r * 0.5 }, group);
+      el('text', { 'font-size': Math.max(16, r * 0.85), y: -r * 0.12 }, group).textContent = id;
+      const note = el('text', { class: 'note', 'font-size': Math.max(12, r * 0.42), y: r * 0.5 }, group);
       this.nodes.set(id, { group, note, client: false });
     });
 
@@ -124,7 +124,7 @@ export class RingView {
       el('rect', { class: 'cut', x: -35, y: -25, width: 70, height: 50, rx: 11 }, group);
       el('rect', { class: 'pick', x: -31, y: -21, width: 62, height: 42, rx: 9 }, group);
       el('rect', { class: 'body', x: -26, y: -16, width: 52, height: 32, rx: 6 }, group);
-      el('text', { 'font-size': 15 }, group).textContent = id;
+      el('text', { 'font-size': 22 }, group).textContent = id;
       this.nodes.set(id, { group, client: true });
     });
   }
@@ -200,7 +200,7 @@ export class RingView {
 
   private renderPackets(s: RingState): void {
     const shown = s.packets.length > MAX_PACKETS ? s.packets.slice(-MAX_PACKETS) : s.packets;
-    while (this.pool.length < shown.length) this.pool.push(el('circle', { r: 5 }, this.packetLayer));
+    while (this.pool.length < shown.length) this.pool.push(el('circle', { r: 9 }, this.packetLayer));
     this.pool.forEach((dot, i) => {
       const p = shown[i];
       const a = p && this.pos.get(p.from);
