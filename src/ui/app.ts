@@ -6,11 +6,11 @@ import { Lane } from './lane.ts';
 import { RingView } from './ringView.ts';
 import { scenarios, type MetricKey, type Scenario } from './scenarios.ts';
 
-/** Simulated milliseconds per real millisecond. Slow-mo applies only while something visible is travelling. */
+/** Simulated milliseconds per real millisecond. Constant, so the pace never changes under you. */
 const SPEEDS = {
-  slow: { label: 'Slow', busy: 0.04, idle: 1 },
-  normal: { label: 'Normal', busy: 1, idle: 1 },
-  fast: { label: 'Fast', busy: 6, idle: 6 },
+  slow: { label: 'Slow', rate: 0.07 },
+  normal: { label: 'Normal', rate: 0.35 },
+  fast: { label: 'Fast', rate: 5 },
 } as const;
 type SpeedMode = keyof typeof SPEEDS;
 
@@ -37,7 +37,6 @@ let playing = true;
 let mode: SpeedMode = 'slow';
 let clock = 0;
 let carry = 0;
-let pace = 1;
 let script: Scenario['script'] = [];
 let selectedKey: string | null = null;
 const selected = new Set<NodeId>();
@@ -231,11 +230,7 @@ function frame(t: number): void {
   const dt = Math.min(100, t - last);
   last = t;
   if (playing) {
-    const speed = SPEEDS[mode];
-    const target = lanes.some((l) => l.busy) ? speed.busy : speed.idle;
-    // Ease between speeds so the world does not lurch when a packet lands.
-    pace += (target - pace) * Math.min(1, dt / 300);
-    carry += dt * pace;
+    carry += dt * SPEEDS[mode].rate;
     const whole = Math.floor(carry);
     if (whole > 0) {
       carry -= whole;

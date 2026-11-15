@@ -130,11 +130,6 @@ export class Lane {
     this.packets.push({ from: e.from, to: e.to, cls, t0: e.t, t1: lost ? e.t + this.sim.network.config.latencyMean : e.arrive, lost });
   }
 
-  /** True while something worth watching is travelling; the page slows time down for it. */
-  get busy(): boolean {
-    return this.packets.some((p) => p.t0 <= this.sim.now && p.t1 >= this.sim.now);
-  }
-
   /** Red if most live peers think it is dead, amber if any doubt it, green otherwise. */
   believed(id: NodeId): Status {
     let voters = 0;
